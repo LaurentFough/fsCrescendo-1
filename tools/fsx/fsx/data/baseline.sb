@@ -1,0 +1,65 @@
+;= ---------------------------------------------------------------------------
+;= fsx baseline profile  -- version 1  (managed by fsx; grants are appended below)
+;= Deny-default Seatbelt profile. Parameters (sandbox-exec -D key=value):
+;=   TARGET                    absolute, symlink-free path of the binary to run
+;=   WRITE_DIR_0 .. WRITE_DIR_7  writable directories, absolute and symlink-free
+;=                             (unused slots must repeat an existing directory)
+;= Rule order (measured, see docs/sandbox-semantics.md): bare rules act as the operation
+;= default; among filtered rules the LAST matching rule wins. Grants are therefore appended
+;= after this baseline so that an approved allow overrides the guards below.
+;= ---------------------------------------------------------------------------
+(version 1)
+(deny default)
+
+;= --- process: exec limited to TARGET ---
+(allow process-exec (literal (param "TARGET")))
+
+;= --- read: minimum for dyld + libSystem to load a dynamic binary ---
+(allow file-read*
+  (literal "/")
+  (subpath "/usr/lib")
+  (subpath "/System/Library")
+  (subpath "/System/Volumes/Preboot/Cryptexes")
+  (subpath "/private/var/db/dyld")
+  (literal (param "TARGET")))
+
+;= --- stat() on each ancestor of each WRITE_DIR_n (metadata only) ---
+(allow file-read-metadata
+  (path-ancestors (param "WRITE_DIR_0"))
+  (path-ancestors (param "WRITE_DIR_1"))
+  (path-ancestors (param "WRITE_DIR_2"))
+  (path-ancestors (param "WRITE_DIR_3"))
+  (path-ancestors (param "WRITE_DIR_4"))
+  (path-ancestors (param "WRITE_DIR_5"))
+  (path-ancestors (param "WRITE_DIR_6"))
+  (path-ancestors (param "WRITE_DIR_7")))
+
+;= --- the only baseline write grant: the WRITE_DIR_n subtrees ---
+(allow file-read* file-write*
+  (subpath (param "WRITE_DIR_0"))
+  (subpath (param "WRITE_DIR_1"))
+  (subpath (param "WRITE_DIR_2"))
+  (subpath (param "WRITE_DIR_3"))
+  (subpath (param "WRITE_DIR_4"))
+  (subpath (param "WRITE_DIR_5"))
+  (subpath (param "WRITE_DIR_6"))
+  (subpath (param "WRITE_DIR_7")))
+
+;= --- harmless sink many tools open ---
+(allow file-read* file-write* (literal "/dev/null"))
+
+;= --- network: denied; a grant may open specific protocol/port pairs (hosts cannot be filtered) ---
+(deny network*)
+
+;= --- guard: writes outside the write dirs stay denied unless a later grant allows them ---
+(deny file-write*
+  (require-all
+    (require-not (subpath (param "WRITE_DIR_0")))
+    (require-not (subpath (param "WRITE_DIR_1")))
+    (require-not (subpath (param "WRITE_DIR_2")))
+    (require-not (subpath (param "WRITE_DIR_3")))
+    (require-not (subpath (param "WRITE_DIR_4")))
+    (require-not (subpath (param "WRITE_DIR_5")))
+    (require-not (subpath (param "WRITE_DIR_6")))
+    (require-not (subpath (param "WRITE_DIR_7")))
+    (require-not (literal "/dev/null"))))

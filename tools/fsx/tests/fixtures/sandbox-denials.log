@@ -1,0 +1,34 @@
+2026-11-07 01:00:40.065 E  kernel[0:ebfff7] (Sandbox) Sandbox: the-binary(45318) deny(1) sysctl-read security.mac.lockdown_mode_state
+2026-11-07 01:00:40.065 E  kernel[0:ebfff7] (Sandbox) Sandbox: the-binary(45318) deny(1) sysctl-read kern.bootargs
+2026-11-07 01:00:40.065 E  kernel[0:ebfff7] (Sandbox) Sandbox: the-binary(45318) deny(1) file-read-metadata /System/Cryptexes/OS
+2026-11-07 01:00:40.065 E  kernel[0:ebfff7] (Sandbox) Sandbox: the-binary(45318) deny(1) sysctl-read kern.bootargs
+2026-11-07 01:00:40.067 E  kernel[0:ebfff7] (Sandbox) 1 duplicate report for Sandbox: the-binary(45318) deny(1) sysctl-read kern.bootargs
+2026-11-07 01:00:40.067 E  kernel[0:ebfff7] (Sandbox) Sandbox: the-binary(45318) deny(1) file-read-data /dev/dtracehelper
+2026-11-07 01:00:40.067 E  kernel[0:ebfff7] (Sandbox) Sandbox: the-binary(45318) deny(1) sysctl-read kern.osproductversion
+2026-11-07 01:00:40.068 E  kernel[0:ebfff7] (Sandbox) Sandbox: the-binary(45318) deny(1) file-read-metadata /var
+2026-11-07 01:00:40.068 E  kernel[0:ebfff7] (Sandbox) Sandbox: the-binary(45318) deny(1) sysctl-read hw.ephemeral_storage
+2026-11-07 01:05:13.304 E  kernel[0:ec31d7] (Sandbox) Sandbox: cr-keygen-macos-arm64(47016) deny(1) file-read-metadata /System/Cryptexes/Rosetta
+2026-11-07 01:05:13.307 E  kernel[0:ec31d7] (Sandbox) Sandbox: cr-keygen-macos-arm64(47016) deny(1) network-outbound /private/var/run/syslog
+2026-11-07 01:05:13.307 E  kernel[0:ec31d7] (Sandbox) Sandbox: cr-keygen-macos-arm64(47016) deny(1) sysctl-read hw.pagesize_compat
+2026-11-07 01:11:17.975 E  kernel[0:ec6e72] (Sandbox) Sandbox: the-binary(49326) deny(1) file-read-metadata $HOME/.gem
+2026-11-07 01:11:17.975 E  kernel[0:ec6e72] (Sandbox) Sandbox: the-binary(49326) deny(1) file-read-metadata /opt/homebrew/opt/openssl
+2026-11-07 01:11:17.975 E  kernel[0:ec6e72] (Sandbox) Sandbox: the-binary(49326) deny(1) file-read-metadata $HOME/.cargo
+2026-11-07 01:11:17.975 E  kernel[0:ec6e72] (Sandbox) Sandbox: the-binary(49326) deny(1) file-read-metadata $HOME/bin
+2026-11-07 01:11:17.975 E  kernel[0:ec6e72] (Sandbox) 1 duplicate report for Sandbox: the-binary(49326) deny(1) file-read-metadata $HOME/bin
+2026-11-07 01:11:17.975 E  kernel[0:ec6e72] (Sandbox) Sandbox: the-binary(49326) deny(1) file-read-metadata /System/Cryptexes/App
+2026-11-07 01:11:17.975 E  kernel[0:ec6e72] (Sandbox) Sandbox: the-binary(49326) deny(1) file-read-metadata /usr/sbin/ioreg
+2026-11-07 01:19:54.322 E  kernel[0:eccbea] (Sandbox) Sandbox: the-binary64(52581) deny(1) file-read-data /dev/null
+2026-11-07 01:39:20.025 E  kernel[0:edab08] (Sandbox) Sandbox: ioreg(60115) deny(1) file-read-metadata /System/Cryptexes/Rosetta
+2026-11-07 01:39:20.045 E  kernel[0:edaa71] (Sandbox) Sandbox: thebinary64(60015) deny(1) mach-lookup com.apple.system.notification_center
+2026-11-07 01:39:20.045 E  kernel[0:edaa71] (Sandbox) Sandbox: thebinary64(60015) deny(1) mach-lookup com.apple.system.opendirectoryd.libinfo
+2026-11-07 01:39:20.046 E  kernel[0:eda9d6] (Sandbox) Sandbox: thebinary64(60015) deny(1) file-read-data /private/etc/passwd
+2026-11-07 01:39:20.046 E  kernel[0:eda9d6] (Sandbox) Sandbox: thebinary64(60015) deny(1) file-read-metadata /private/etc/passwd
+2026-11-07 01:34:14.013 E  kernel[0:ed7524] (Sandbox) Sandbox: the-binary64(58136) deny(1) sysctl-read hw.optional.armv8_1_atomics
+2026-11-07 01:34:14.013 E  kernel[0:ed7524] (Sandbox) Sandbox: the-binary64(58136) deny(1) sysctl-read hw.optional.armv8_crc32
+2026-11-07 01:34:14.013 E  kernel[0:ed7524] (Sandbox) Sandbox: the-binary64(58136) deny(1) sysctl-read hw.optional.armv8_2_sha512
+2026-11-07 01:34:14.013 E  kernel[0:ed7524] (Sandbox) Sandbox: the-binary64(58136) deny(1) sysctl-read hw.optional.arm.FEAT_DIT
+2026-11-07 01:34:14.014 E  kernel[0:ed7524] (Sandbox) Sandbox: the-binary64(58136) deny(1) sysctl-read kern.maxfilesperproc
+2026-11-07 02:00:00.000 E  kernel[0:ed7524] (Sandbox) Sandbox: Google Chrome Helper (Renderer)(900) deny(1) file-write-create /Users/me/Library/Caches/x y/file "name".tmp
+2026-11-07 02:00:01.000 E  kernel[0:ed7524] (Sandbox) Sandbox: tool(901) deny(1) process-fork
+2026-11-07 02:00:02.000 E  kernel[0:ed7524] (Sandbox) Sandbox: tool(901) deny(1) file-read-data /Users/me/.ssh/id_ed25519
+this line is not a sandbox denial and must be skipped
