@@ -120,7 +120,8 @@ class ViewController: NSViewController {
 
     // Handles updating the detail pane view for event details in our prop bags
     func updateSelectedRow() {
-        if logTableView.selectedRowIndexes.count == 0 || logTableView.selectedRow > activeItems.count {
+        //= `>=`: a selected row equal to the item count is already out of range (COR-06).
+        if logTableView.selectedRowIndexes.count == 0 || logTableView.selectedRow >= activeItems.count {
             return
         }
         displayEventDetails(event: activeItems[logTableView.selectedRow])
