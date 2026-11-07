@@ -15,7 +15,7 @@ from cresc.denials import Group
 from cresc.profile import Profile, ProfileError, default_store, validate_sbpl
 from cresc.rules import Rule
 from cresc.session import (MAX_WRITE_DIRS, SAFE_ENV, SessionError, build_argv, child_env, compare_groups, kill_tree,
-                         latest_run_number,
+                         latest_run_number, safe_text,
                          list_runs, load_run, resolve_target, resolve_write_dirs, run_once, watch_predicate)
 
 FAKE_SANDBOX_EXEC = """#!/usr/bin/env python3
@@ -158,6 +158,16 @@ class ProfileTests(unittest.TestCase):
         for bad in ("(a", "a)", '(a "unterminated)'):
             with self.assertRaises(ProfileError, msg=bad):
                 validate_sbpl(bad)
+
+
+class SafeTextTests(unittest.TestCase):
+    def test_control_characters_are_made_visible(self):
+        self.assertEqual(safe_text("plain\ttext\nline"), "plain\ttext\nline")
+        self.assertEqual(safe_text("h\u00e9llo \u2713 \u65e5\u672c"), "h\u00e9llo \u2713 \u65e5\u672c")
+        self.assertEqual(safe_text("\x1b]0;evil\x07"), "\\x1b]0;evil\\x07")      #= window-title escape sequence
+        self.assertEqual(safe_text("\x1b[2J"), "\\x1b[2J")                          #= clear screen
+        for ch in ("\x00", "\x08", "\x0d", "\x7f", "\x9b"):
+            self.assertNotIn(ch, safe_text("a%sb" % ch), repr(ch))
 
 
 class ValidationTests(unittest.TestCase):

@@ -186,6 +186,19 @@ def kill_tree(proc: subprocess.Popen, grace: float = 3.0) -> None:
         pass
 
 
+def safe_text(text: str) -> str:
+    """Make program output safe to print: control characters (including ESC, so no terminal escape sequences) and
+    the C1 range become visible \\xNN escapes; newline and tab are kept. A suspect binary controls its own output."""
+    out = []
+    for ch in text:
+        o = ord(ch)
+        if ch in "\n\t" or (o >= 0x20 and o != 0x7F and not (0x80 <= o <= 0x9F)):
+            out.append(ch)
+        else:
+            out.append("\\x%02x" % o)
+    return "".join(out)
+
+
 #= ---- runs -------------------------------------------------------------------------------------------------
 @dataclass
 class RunResult:
@@ -265,7 +278,7 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
     _atomic_write(os.path.join(rdir, "denials.jsonl"), "".join(json.dumps(d.to_dict()) + "\n" for d in denials))
     groups = fold(denials)
     with open(err_path, "rb") as fh:
-        tail = fh.read()[-300:].decode("utf-8", "replace")
+        tail = safe_text(fh.read()[-300:].decode("utf-8", "replace"))
     meta = {"schema": SCHEMAS["run"], "run": number, "profile": profile.name, "profile_version": version,
             "target": target, "args": list(args), "write_dirs": dirs, "cwd": cwd, "watch": names, "argv": argv,
             "env_inherited": bool(inherit_env), "env_names": sorted(env),     #= names only, never values

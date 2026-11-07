@@ -15,7 +15,7 @@ from .classify import path_entries, risk
 from .denials import Group, fold, parse_lines
 from .rules import synthesize
 from .profile import Profile, ProfileError, default_store
-from .session import (SessionError, compare_groups, latest_run_number, list_runs, load_run, run_once)
+from .session import (SessionError, compare_groups, latest_run_number, list_runs, load_run, run_once, safe_text)
 from .triage import Item, suggested_prefixes, summary, triage
 
 log = logging.getLogger("cresc")
@@ -214,8 +214,11 @@ def report_run(result, profile: Profile, json_out: bool, entries: Sequence[str],
     how = "timed out" if m["timed_out"] else ("interrupted" if m["interrupted"] else "exit %s" % m["exit"])
     print("run %d under %s v%d: %s after %.1fs, %d denial(s) in %d group(s)"
           % (m["run"], m["profile"], m["profile_version"], how, m["duration_s"], m["denials_total"], m["groups"]))
+    sizes = [os.path.getsize(os.path.join(result.directory, n)) if os.path.isfile(os.path.join(result.directory, n)) else 0
+             for n in ("stdout.txt", "stderr.txt")]
+    print("output: stdout %d B, stderr %d B   (cresc output %s --run %d)" % (sizes[0], sizes[1], m["profile"], m["run"]))
     if m["stderr_tail"].strip():
-        print("stderr (tail): " + m["stderr_tail"].strip().replace("\n", " | ")[-200:])
+        print("stderr (tail): " + safe_text(m["stderr_tail"].strip()).replace("\n", " | ")[-200:])
     cands = [i for i in items if i.klass == "candidate"]
     if cands:
         print(table(HEADERS, item_rows(cands)))
@@ -232,6 +235,39 @@ def cmd_run(args: argparse.Namespace) -> int:
     entries = path_entries(os.environ.get("PATH", ""), home)
     result = run_once(prof, **run_args(args))
     report_run(result, prof, args.json, entries, home)
+    return 0
+
+
+def read_head(path: str, limit: int) -> Dict:
+    """The first `limit` bytes of a run's output file, escaped for printing."""
+    if not os.path.isfile(path):
+        return {"bytes": 0, "truncated": False, "text": ""}
+    size = os.path.getsize(path)
+    with open(path, "rb") as fh:
+        data = fh.read(limit)
+    return {"bytes": size, "truncated": size > limit, "text": safe_text(data.decode("utf-8", "replace"))}
+
+
+def cmd_output(args: argparse.Namespace) -> int:
+    prof = Profile.load(args.store, args.name)
+    number = latest_run_number(prof) if args.run == "last" else int(args.run)
+    res = load_run(prof, number)
+    limit = max(1, min(args.bytes, 1000000))
+    #= read from the run directory itself, never from paths stored inside result.json
+    streams = {n: read_head(os.path.join(res.directory, n + ".txt"), limit) for n in ("stdout", "stderr")}
+    m = res.meta
+    if args.json:
+        emit_json({"schema": SCHEMAS["run"], "run": number, "exit": m["exit"], "args": m["args"], "cwd": m.get("cwd"),
+                   "profile_version": m["profile_version"], "stdout": streams["stdout"], "stderr": streams["stderr"]})
+        return 0
+    print("run %d under %s v%d: exit %s, started %s" % (number, m["profile"], m["profile_version"], m["exit"], m["started"]))
+    print("program  : %s" % m["target"])
+    print("arguments: %s" % (" ".join(repr(a) for a in m["args"]) or "(none)"))
+    print("start dir: %s" % m.get("cwd", "?"))
+    for n in ("stdout", "stderr"):
+        s = streams[n]
+        print("\n--- %s (%d bytes%s) ---" % (n, s["bytes"], ", first %d shown" % limit if s["truncated"] else ""))
+        print(s["text"].rstrip("\n") if s["text"] else "(empty)")
     return 0
 
 
@@ -385,6 +421,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sp.add_parser("loop", help="run, review denials, grant, kill and restart (interactive)")
     add_common(p); add_run_options(p); p.set_defaults(func=cmd_loop)
+
+    p = sp.add_parser("output", help="show a run's arguments, exit status, stdout and stderr (control characters escaped)")
+    add_common(p); p.add_argument("name"); p.add_argument("--run", default="last", help="run number or 'last' (default)")
+    p.add_argument("--bytes", type=int, default=4000, help="how much of each stream to show (default 4000)")
+    p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_output)
 
     p = sp.add_parser("runs", help="list the runs of a profile")
     add_common(p); p.add_argument("name"); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_runs)

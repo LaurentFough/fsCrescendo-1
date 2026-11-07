@@ -236,6 +236,34 @@ class RunWorkflow(CliCase):
         ok = self.cresc("run", "demo", *self.run_args(), "--", "-c", "exit 0")
         self.assertNotIn("no grantable denial", ok.stdout)           #= a clean exit needs no hint
 
+    def test_output_command_shows_arguments_and_streams(self):
+        self.cresc("run", "demo", *self.run_args(), "--", "-c", "echo out; echo err >&2; exit 3")
+        t = self.cresc("output", "demo").stdout
+        self.assertIn("exit 3", t)
+        self.assertIn("'-c'", t)                                   #= the arguments the program really got
+        self.assertIn("--- stdout (4 bytes) ---\nout", t)
+        self.assertIn("--- stderr (4 bytes) ---\nerr", t)
+        self.assertIn("start dir:", t)
+        j = json.loads(self.cresc("output", "demo", "--run", "1", "--json").stdout)
+        self.assertEqual((j["exit"], j["stdout"]["text"].strip(), j["stderr"]["bytes"]), (3, "out", 4))
+        short = json.loads(self.cresc("output", "demo", "--bytes", "2", "--json").stdout)
+        self.assertEqual((short["stdout"]["text"], short["stdout"]["truncated"]), ("ou", True))
+        self.cresc("output", "demo", "--run", "99", expect=65)
+
+    def test_run_report_mentions_output_sizes(self):
+        out = self.cresc("run", "demo", *self.run_args(), "--", "-c", "echo hello").stdout
+        self.assertIn("output: stdout 6 B, stderr 0 B", out)
+
+    def test_hostile_program_output_cannot_drive_the_terminal(self):
+        evil = r"printf '\033]0;pwned\007\033[2J' >&2; printf '\033[31mred\033[0m'; exit 1"
+        report = self.cresc("run", "demo", *self.run_args(), "--", "-c", evil).stdout
+        shown = self.cresc("output", "demo").stdout
+        for text in (report, shown):
+            self.assertNotIn("\x1b", text)
+            self.assertNotIn("\x07", text)
+        self.assertIn("\\x1b[31mred", shown)                         #= visible, escaped
+        self.assertIn("pwned", shown)
+
     def test_refuses_dangerous_write_dirs(self):
         p = self.cresc("run", "demo", "--target", "sh", "--write-dir", "/", expect=65)
         self.assertIn("refusing", p.stderr)

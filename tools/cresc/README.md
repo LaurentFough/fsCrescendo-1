@@ -54,6 +54,7 @@ Non-interactive pieces (what a GUI calls):
 | `cresc profile new/list/show/path/history/diff/revoke/grant` | versioned profiles (`cresc.profile/1`) |
 | `cresc run NAME --target T --write-dir D [--watch NAME] [--timeout S] -- ARGS` | one run (`--json`: `cresc.run/1`) |
 | `cresc runs NAME`, `cresc compare NAME A B` | run history and what a profile change resolved |
+| `cresc output NAME [--run N] [--bytes B] [--json]` | the run's arguments, exit status, stdout and stderr (control characters escaped) |
 | `cresc loop NAME ...` | interactive run / grant / restart |
 
 Program arguments go after a literal `--`. Data lives in `$CRESC_HOME` (default `~/.local/share/cresc`).
@@ -67,6 +68,8 @@ Program arguments go after a literal `--`. Data lives in `$CRESC_HOME` (default 
 - Write directories must be absolute and not symlinks; `/`, `$HOME` and its ancestors are refused; directories cresc creates get mode 700, existing ones are not touched.
 - Generated rules are **allows only**; strings are escaped and control characters refused; a profile that does not parse is never saved.
 - Grants that need confirmation are all-or-nothing: if any selected rule needs `--confirm` and it is missing, nothing is granted.
+- Program output is untrusted: it is escaped before it is printed (ESC, NUL, DEL and the C1 range show as `\xNN`), so a suspect
+  binary cannot rewrite your terminal or window title.
 - Network grants are protocol and port only (the sandbox cannot filter by host, see `docs/sandbox-semantics.md`).
 - Harmless denials (DTrace helper, Rosetta check, syslog socket, notification center, PATH-search stats) are listed with a reason and never suggested for granting.
 
