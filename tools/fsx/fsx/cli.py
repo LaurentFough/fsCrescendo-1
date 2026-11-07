@@ -11,8 +11,9 @@ import sys
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from . import SCHEMAS, __version__
-from .classify import path_entries
+from .classify import path_entries, risk
 from .denials import Group, fold, parse_lines
+from .rules import synthesize
 from .profile import Profile, ProfileError, default_store
 from .session import (SessionError, compare_groups, latest_run_number, list_runs, load_run, run_once)
 from .triage import Item, suggested_prefixes, summary, triage
@@ -127,6 +128,21 @@ def select_for_grant(items: Sequence[Item], ids: Sequence[str], auto: Optional[s
     return unique
 
 
+def manual_item(text: str) -> Item:
+    """A rule typed by hand as 'OPERATION TARGET', e.g. 'sysctl-read hw.pagesize'. It goes through the same rule
+    synthesis, risk rating and confirmation as a logged denial, so a typo or a dangerous rule is still caught."""
+    parts = text.strip().split(None, 1)
+    if not parts:
+        raise CliError("empty rule: expected 'OPERATION TARGET'", 64)
+    op, target = parts[0], (parts[1].strip() if len(parts) > 1 else "")
+    group = Group(process="(added by hand)", op=op, target=target, count=0)
+    rule = synthesize(group)
+    if rule is None:
+        raise CliError("no rule form for %r with target %r (supported: sysctl-read, file-read-*, file-write-*, "
+                       "mach-lookup, process-exec, process-fork, network-outbound)" % (op, target), 64)
+    return Item(group=group, klass="candidate", reason="added by hand", risk=risk(op, target), rule=rule)
+
+
 def apply_grants(prof: Profile, selected: Sequence[Item], confirm: bool, note: str) -> List[Dict]:
     risky = [i for i in selected if i.needs_confirm or not i.rule.verified]
     if risky and not confirm:
@@ -165,10 +181,13 @@ def cmd_profile(args: argparse.Namespace) -> int:
     elif sub == "revoke":
         print("revoked %s -> v%d" % (args.id, p.revoke(args.id)))
     elif sub == "grant":
-        if not args.id and not args.auto:
-            raise CliError("choose what to grant: --id RULE_ID (repeatable) and/or --auto low|medium", 64)
-        items = items_from_args(args)
-        done = apply_grants(p, select_for_grant(items, args.id or [], args.auto), args.confirm, args.note or "")
+        if not args.id and not args.auto and not args.manual:
+            raise CliError("choose what to grant: --id RULE_ID, --auto low|medium and/or --manual 'OPERATION TARGET'", 64)
+        selected: List[Item] = []
+        if args.id or args.auto:                      #= only read a log/stdin when a denial source is needed
+            selected = select_for_grant(items_from_args(args), args.id or [], args.auto)
+        selected += [manual_item(m) for m in (args.manual or [])]
+        done = apply_grants(p, selected, args.confirm, args.note or "")
         if args.json:
             emit_json({"schema": SCHEMAS["profile"], "profile": p.name, "version": p.version, "grants": done})
         else:
@@ -199,6 +218,10 @@ def report_run(result, profile: Profile, json_out: bool, entries: Sequence[str],
     cands = [i for i in items if i.klass == "candidate"]
     if cands:
         print(table(HEADERS, item_rows(cands)))
+    elif m["exit"] not in (0, None) and not m["timed_out"] and not m["interrupted"]:
+        print("The program failed (exit %s) but no grantable denial was logged. A denial may not be reported, or the "
+              "failure has another cause. Compare with an unsandboxed run, or add a rule by hand "
+              "(loop: 'a OPERATION TARGET'; profile grant --manual 'OPERATION TARGET')." % m["exit"])
     return items
 
 
@@ -252,19 +275,23 @@ def cmd_loop(args: argparse.Namespace) -> int:
         for i in grantable:
             print("  %s  %s" % (i.rule.id, i.rule.render()))
         try:
-            line = input("\n[g low|medium|<rule ids>] grant then restart   [r] restart   [q] quit > ").strip()
+            line = input("\n[g low|medium|<rule ids>] grant then restart   [a OPERATION TARGET] add a rule by hand"
+                         "   [r] restart   [q] quit > ").strip()
         except EOFError:
             line = "q"
         if line in ("q", "quit", ""):
             return 0
         if line in ("r", "restart"):
             continue
-        if line.startswith("g"):
-            words = line.split()[1:]
-            auto = words[0] if words and words[0] in ("low", "medium") else None
-            ids = [w for w in words if w not in ("low", "medium")]
+        if line.startswith("g") or line.startswith("a "):
             try:
-                selected = select_for_grant(items, ids, auto)
+                if line.startswith("a "):
+                    selected = [manual_item(line[2:])]
+                else:
+                    words = line.split()[1:]
+                    auto = words[0] if words and words[0] in ("low", "medium") else None
+                    ids = [w for w in words if w not in ("low", "medium")]
+                    selected = select_for_grant(items, ids, auto)
                 needs = [i for i in selected if i.needs_confirm or not i.rule.verified]
                 confirm = False
                 if needs:
@@ -342,6 +369,8 @@ def build_parser() -> argparse.ArgumentParser:
     q = leaf("grant"); q.add_argument("name"); add_source(q, with_profile=False); q.add_argument("--json", action="store_true")
     q.add_argument("--id", action="append", help="rule id from `fsx triage` (repeatable)")
     q.add_argument("--auto", choices=("low", "medium"), help="grant every candidate up to this risk that needs no confirmation")
+    q.add_argument("--manual", action="append", metavar="'OPERATION TARGET'",
+                   help="grant a rule by hand, e.g. 'sysctl-read hw.pagesize' (repeatable); same checks as a logged denial")
     q.add_argument("--confirm", action="store_true", help="also allow high-risk, write, exec, network or unverified rules")
     q.add_argument("--note", help="why (stored with the grant)")
     p.set_defaults(func=cmd_profile)

@@ -127,6 +127,35 @@ class ProfileCommands(CliCase):
         self.fsx("profile", "grant", "demo", FIXTURE, expect=64)
 
 
+class ManualGrants(CliCase):
+    def setUp(self):
+        super().setUp()
+        self.fsx("profile", "new", "demo")
+
+    def test_manual_low_risk_rule(self):
+        out = self.fsx("profile", "grant", "demo", "--manual", "sysctl-read hw.pagesize", stdin="").stdout
+        self.assertIn('(allow sysctl-read (sysctl-name "hw.pagesize"))', out)
+        self.assertIn("hw.pagesize", self.fsx("profile", "show", "demo").stdout)
+
+    def test_manual_dangerous_rules_need_confirm_like_logged_ones(self):
+        p = self.fsx("profile", "grant", "demo", "--manual", "file-write-create /Users/me/x", expect=65, stdin="")
+        self.assertIn("need --confirm", p.stderr)
+        self.assertNotIn("/Users/me/x", self.fsx("profile", "show", "demo").stdout)
+        self.fsx("profile", "grant", "demo", "--manual", "file-write-create /Users/me/x", "--confirm", stdin="")
+        self.assertIn('(literal "/Users/me/x")', self.fsx("profile", "show", "demo").stdout)
+
+    def test_manual_rule_without_a_known_form_is_refused(self):
+        p = self.fsx("profile", "grant", "demo", "--manual", "iokit-open IOSurfaceRootUserClient", expect=64, stdin="")
+        self.assertIn("no rule form", p.stderr)
+        self.fsx("profile", "grant", "demo", "--manual", "   ", expect=64, stdin="")
+
+    def test_manual_rule_cannot_inject_profile_text(self):
+        self.fsx("profile", "grant", "demo", "--manual", 'file-read-data /x") (allow default) ("', stdin="")
+        text = self.fsx("profile", "show", "demo").stdout
+        self.assertNotIn("\n(allow default)", text)
+        self.assertIn('\\")', text)                            #= the quote was escaped, not interpreted
+
+
 class RunWorkflow(CliCase):
     def setUp(self):
         super().setUp()
@@ -190,6 +219,21 @@ class RunWorkflow(CliCase):
     def test_loop_restart_and_eof(self):
         p = self.fsx("loop", "demo", *self.run_args(), "--", "-c", "exit 0", stdin="r\n")      #= restart, then EOF = quit
         self.assertIn("run 2 under demo v1", p.stdout)
+
+    def test_loop_manual_rule_then_restart(self):
+        p = self.fsx("loop", "demo", *self.run_args(), "--", "-c", "exit 0", stdin="a sysctl-read hw.pagesize\nq\n")
+        self.assertIn("granted 1 rule(s): profile is now v2", p.stdout)
+        self.assertIn("run 2 under demo v2", p.stdout)
+        self.assertIn("hw.pagesize", self.fsx("profile", "show", "demo").stdout)
+        bad = self.fsx("loop", "demo", *self.run_args(), "--", "-c", "exit 0", stdin="a iokit-open X\nq\n")
+        self.assertIn("not granted", bad.stdout)
+
+    def test_failure_without_denials_explains_what_to_do(self):
+        self.set_denials([])
+        p = self.fsx("run", "demo", *self.run_args(), "--", "-c", "exit 2")
+        self.assertIn("no grantable denial was logged", p.stdout)
+        ok = self.fsx("run", "demo", *self.run_args(), "--", "-c", "exit 0")
+        self.assertNotIn("no grantable denial", ok.stdout)           #= a clean exit needs no hint
 
     def test_refuses_dangerous_write_dirs(self):
         p = self.fsx("run", "demo", "--target", "sh", "--write-dir", "/", expect=65)
