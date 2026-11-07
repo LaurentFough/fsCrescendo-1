@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.4.0  (2026-11-07)
+#= Makefile  -- version 1.4.1  (2026-11-07)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.4.0
+MAKEFILE_VERSION := 1.4.1
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -289,8 +289,9 @@ sysext-dev-off: require-macos #= Disable system-extension developer mode
 
 entitlements: require-macos #= Show the entitlements of the built app and its embedded extension
 	@[ -d "$(APP_PATH)" ] || { echo "ERROR: $(APP_PATH) not found - build first" >&2; exit 66; }
-	@echo "== app";  codesign -d --entitlements :- "$(APP_PATH)" 2>&1 || true
-	@for e in "$(APP_PATH)"/Contents/Library/SystemExtensions/*.systemextension; do [ -e "$$e" ] || continue; echo "== $$e"; codesign -d --entitlements :- "$$e" 2>&1 || true; done
+	@show() { out=$$(codesign -d --entitlements - --xml "$$1" 2>/dev/null); [ -n "$$out" ] || out=$$(codesign -d --entitlements :- "$$1" 2>/dev/null); if [ -z "$$out" ]; then echo "  (no entitlements)"; elif command -v plutil >/dev/null 2>&1; then printf '%s\n' "$$out" | plutil -p - 2>/dev/null || printf '%s\n' "$$out"; else printf '%s\n' "$$out"; fi; }; \
+	echo "== app"; show "$(APP_PATH)"; \
+	for e in "$(APP_PATH)"/Contents/Library/SystemExtensions/*.systemextension; do [ -e "$$e" ] || continue; echo "== $$e"; show "$$e"; done
 
 verify-sign: require-macos #= Verify the code signature of the built app (deep, strict)
 	@[ -d "$(APP_PATH)" ] || { echo "ERROR: $(APP_PATH) not found - build first" >&2; exit 66; }
