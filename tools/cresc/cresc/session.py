@@ -2,7 +2,7 @@
 #= Managed sessions: run a program under a profile version with sandbox-exec, capture the Sandbox denials it causes,
 #= stop its whole process tree, and let the caller restart it under an updated profile version.
 #= A port of the validations in sandbox-run.sh. macOS runtime tools are injectable for tests:
-#=   FSX_SANDBOX_EXEC (default: sandbox-exec)   FSX_LOG (default: /usr/bin/log)
+#=   CRESC_SANDBOX_EXEC (default: sandbox-exec)   CRESC_LOG (default: /usr/bin/log)
 #= Security notes: the program gets NO stdin and its stdout/stderr go to files in the run directory (never to the
 #= terminal), so what it learns can only leave through those files and the write directories.
 from __future__ import annotations
@@ -79,7 +79,7 @@ def build_argv(sandbox_exec: str, profile_path: str, target: str, write_dirs: Se
     return argv + ["-D", "TARGET=%s" % target, "-f", profile_path, target] + list(args)
 
 
-#= Variables the program receives by default. Everything else in fsx's environment (tokens, API keys, ...) is withheld:
+#= Variables the program receives by default. Everything else in cresc's environment (tokens, API keys, ...) is withheld:
 #= a suspect binary could otherwise read secrets from its environment without touching any file.
 SAFE_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TZ")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -116,7 +116,7 @@ class LogWatcher(threading.Thread):
     def __init__(self, names: Sequence[str], log_bin: Optional[str] = None,
                  on_denial: Optional[Callable[[Denial], None]] = None):
         super().__init__(daemon=True)
-        binary = log_bin or os.environ.get("FSX_LOG") or "/usr/bin/log"
+        binary = log_bin or os.environ.get("CRESC_LOG") or "/usr/bin/log"
         self.cmd = [binary, "stream", "--style", "ndjson", "--predicate", watch_predicate(names)]
         self.error: Optional[str] = None
         self.started = threading.Event()
@@ -212,7 +212,7 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
              log_bin: Optional[str] = None, on_denial: Optional[Callable[[Denial], None]] = None,
              pass_env: Sequence[str] = (), inherit_env: bool = False) -> RunResult:
     """Run `target` once under the profile's CURRENT version; return the run record (also saved on disk)."""
-    sbx = sandbox_exec or os.environ.get("FSX_SANDBOX_EXEC") or "sandbox-exec"
+    sbx = sandbox_exec or os.environ.get("CRESC_SANDBOX_EXEC") or "sandbox-exec"
     target = resolve_target(target)
     dirs = resolve_write_dirs(write_dirs)
     names = [os.path.basename(target)] + [w for w in watch if w]

@@ -1,5 +1,5 @@
 #= cli.py  version 0.1.0 (2026-11-07)
-#= Command line for fsx. JSON output (--json) is the contract for a GUI; the default output is for people.
+#= Command line for cresc. JSON output (--json) is the contract for a GUI; the default output is for people.
 #= Exit codes: 0 ok | 1 unexpected | 2 usage (argparse) | 65 refused/invalid data | 66 missing input
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from .profile import Profile, ProfileError, default_store
 from .session import (SessionError, compare_groups, latest_run_number, list_runs, load_run, run_once)
 from .triage import Item, suggested_prefixes, summary, triage
 
-log = logging.getLogger("fsx")
+log = logging.getLogger("cresc")
 
 
 class CliError(Exception):
@@ -115,7 +115,7 @@ def select_for_grant(items: Sequence[Item], ids: Sequence[str], auto: Optional[s
     chosen: List[Item] = []
     for rid in ids:
         if rid not in by_id:
-            raise CliError("no grantable denial has rule id %r (run `fsx triage` to list ids)" % rid)
+            raise CliError("no grantable denial has rule id %r (run `cresc triage` to list ids)" % rid)
         chosen.append(by_id[rid])
     if auto:
         allowed = {"low": ("low",), "medium": ("low", "medium")}[auto]
@@ -301,7 +301,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
                     confirm = input("type YES to grant these as well > ").strip() == "YES"
                     if not confirm:
                         selected = [i for i in selected if i not in needs]
-                done = apply_grants(prof, selected, True, "granted in fsx loop (run %d)" % result.number)
+                done = apply_grants(prof, selected, True, "granted in cresc loop (run %d)" % result.number)
             except CliError as exc:
                 print("not granted: %s" % exc)
                 continue
@@ -312,7 +312,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
 
 #= ---- argument parsing -------------------------------------------------------------------------------------
 def add_common(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--store", default=default_store(), help="data directory (default: $FSX_HOME or ~/.local/share/fsx)")
+    p.add_argument("--store", default=default_store(), help="data directory (default: $CRESC_HOME or ~/.local/share/cresc)")
     p.add_argument("--home", help="home directory used to expand ~ and $HOME (default: yours)")
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging on stderr")
 
@@ -338,12 +338,12 @@ def add_run_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--timeout", type=float, help="stop the program after this many seconds")
     p.add_argument("--settle", type=float, default=3.0, help="seconds to keep reading the log after exit (default 3)")
     p.add_argument("--startup-wait", type=float, default=1.0, help="seconds to let the log reader start (default 1)")
-    p.epilog = "Put the program's own arguments after a literal --, e.g.  fsx run demo --target ./tool --write-dir ~/tmp/out -- --flag value"
+    p.epilog = "Put the program's own arguments after a literal --, e.g.  cresc run demo --target ./tool --write-dir ~/tmp/out -- --flag value"
 
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(prog="fsx", description="Sandbox-denial triage and managed sandbox sessions.")
-    ap.add_argument("--version", action="version", version="fsx " + __version__)
+    ap = argparse.ArgumentParser(prog="cresc", description="Sandbox-denial triage and managed sandbox sessions.")
+    ap.add_argument("--version", action="version", version="cresc " + __version__)
     sp = ap.add_subparsers(dest="cmd", required=True)
 
     p = sp.add_parser("parse", help="parse Sandbox denial log lines into grouped JSON/table")
@@ -359,7 +359,7 @@ def build_parser() -> argparse.ArgumentParser:
     ps = p.add_subparsers(dest="profile_cmd", required=True)
 
     def leaf(name: str) -> argparse.ArgumentParser:
-        #= common options live on each leaf so they work after the sub-command: fsx profile new foo --store X
+        #= common options live on each leaf so they work after the sub-command: cresc profile new foo --store X
         q = ps.add_parser(name)
         add_common(q)
         return q
@@ -372,7 +372,7 @@ def build_parser() -> argparse.ArgumentParser:
     q = leaf("diff"); q.add_argument("name"); q.add_argument("a", type=int); q.add_argument("b", type=int)
     q = leaf("revoke"); q.add_argument("name"); q.add_argument("id")
     q = leaf("grant"); q.add_argument("name"); add_source(q, with_profile=False); q.add_argument("--json", action="store_true")
-    q.add_argument("--id", action="append", help="rule id from `fsx triage` (repeatable)")
+    q.add_argument("--id", action="append", help="rule id from `cresc triage` (repeatable)")
     q.add_argument("--auto", choices=("low", "medium"), help="grant every candidate up to this risk that needs no confirmation")
     q.add_argument("--manual", action="append", metavar="'OPERATION TARGET'",
                    help="grant a rule by hand, e.g. 'sysctl-read hw.pagesize' (repeatable); same checks as a logged denial")
@@ -398,7 +398,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     ap = build_parser()
     argv = list(sys.argv[1:] if argv is None else argv)
-    #= everything after the first literal -- belongs to the program being run, not to fsx
+    #= everything after the first literal -- belongs to the program being run, not to cresc
     cmd_args: List[str] = []
     if "--" in argv:
         i = argv.index("--")
@@ -406,7 +406,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = ap.parse_args(argv)
     args.cmd_args = cmd_args
     logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.WARNING,
-                        format="%(asctime)s fsx %(levelname)s %(message)s", stream=sys.stderr)
+                        format="%(asctime)s cresc %(levelname)s %(message)s", stream=sys.stderr)
     if args.cmd == "triage":
         if args.run is not None and not args.profile:
             ap.error("--run needs --profile")
@@ -417,7 +417,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         return int(args.func(args) or 0)
     except (CliError, ProfileError, SessionError) as exc:
-        print("fsx: error: %s" % exc, file=sys.stderr)
+        print("cresc: error: %s" % exc, file=sys.stderr)
         return exc.code if isinstance(exc, CliError) else 65
     except BrokenPipeError:
         return 0

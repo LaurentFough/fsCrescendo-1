@@ -1,6 +1,6 @@
 #= test_profile_session.py  version 0.1.0 (2026-11-07)
 #= Profile store (versions, grants, revoke, diff) and managed sessions (validation, run, timeout, kill, compare).
-#= macOS tools are replaced by fakes: FSX_SANDBOX_EXEC runs the program unconfined, FSX_LOG prints canned denials.
+#= macOS tools are replaced by fakes: CRESC_SANDBOX_EXEC runs the program unconfined, CRESC_LOG prints canned denials.
 import json
 import os
 import signal
@@ -11,10 +11,10 @@ import tempfile
 import time
 import unittest
 
-from fsx.denials import Group
-from fsx.profile import Profile, ProfileError, validate_sbpl
-from fsx.rules import Rule
-from fsx.session import (MAX_WRITE_DIRS, SAFE_ENV, SessionError, build_argv, child_env, compare_groups, kill_tree,
+from cresc.denials import Group
+from cresc.profile import Profile, ProfileError, default_store, validate_sbpl
+from cresc.rules import Rule
+from cresc.session import (MAX_WRITE_DIRS, SAFE_ENV, SessionError, build_argv, child_env, compare_groups, kill_tree,
                          latest_run_number,
                          list_runs, load_run, resolve_target, resolve_write_dirs, run_once, watch_predicate)
 
@@ -128,6 +128,31 @@ class ProfileTests(unittest.TestCase):
         validate_sbpl(text)
         self.assertNotIn("\n(allow default)", text)           #= newlines in a note are flattened into the comment line
 
+    def test_default_store_keeps_pre_rename_data(self):
+        #= fsx was renamed to cresc: an existing ~/.local/share/fsx (and FSX_HOME) must keep working
+        saved = {k: os.environ.get(k) for k in ("HOME", "CRESC_HOME", "FSX_HOME")}
+        try:
+            home = os.path.realpath(self.tmp.name)
+            os.environ["HOME"] = home
+            os.environ.pop("CRESC_HOME", None)
+            os.environ.pop("FSX_HOME", None)
+            base = os.path.join(home, ".local", "share")
+            self.assertEqual(default_store(), os.path.join(base, "cresc"))              #= fresh machine: the new name
+            os.makedirs(os.path.join(base, "fsx"))
+            self.assertEqual(default_store(), os.path.join(base, "fsx"))                #= only old data exists: keep using it
+            os.makedirs(os.path.join(base, "cresc"))
+            self.assertEqual(default_store(), os.path.join(base, "cresc"))              #= new data exists: it wins
+            os.environ["FSX_HOME"] = "/legacy/env"
+            self.assertEqual(default_store(), "/legacy/env")                            #= the old variable still works...
+            os.environ["CRESC_HOME"] = "/new/env"
+            self.assertEqual(default_store(), "/new/env")                               #= ...but the new one wins
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
     def test_validate_sbpl(self):
         validate_sbpl('(a "(" ")" ; ( comment\n (b))')
         for bad in ("(a", "a)", '(a "unterminated)'):
@@ -228,7 +253,7 @@ class RunTests(unittest.TestCase):
         write_exec(self.sbx, FAKE_SANDBOX_EXEC)
         write_exec(self.log, FAKE_LOG)
         self.write_denials([("sh", "sysctl-read", "kern.bootargs"), ("sh", "mach-lookup", "com.apple.x")])
-        self.env = {"FSX_SANDBOX_EXEC": self.sbx, "FSX_LOG": self.log, "FAKE_DENIALS": self.denials,
+        self.env = {"CRESC_SANDBOX_EXEC": self.sbx, "CRESC_LOG": self.log, "FAKE_DENIALS": self.denials,
                     "FAKE_ARGV_OUT": self.argv_out}
         self.saved = {k: os.environ.get(k) for k in self.env}
         os.environ.update(self.env)
@@ -308,7 +333,7 @@ class RunTests(unittest.TestCase):
     def test_secrets_in_the_environment_are_withheld_by_default(self):
         os.environ["SECRET_TOKEN"] = "hunter2"
         try:
-            hidden = self.run_sh('echo "[$SECRET_TOKEN][$HOME][${FSX_HOME:-unset}]"')
+            hidden = self.run_sh('echo "[$SECRET_TOKEN][$HOME][${CRESC_HOME:-unset}]"')
             out = open(hidden.meta["stdout"]).read().strip()
             self.assertTrue(out.startswith("[]["), out)               #= the token is not visible
             self.assertIn("SECRET_TOKEN", "".join(os.environ))         #= ...although it is set in our own environment
@@ -336,7 +361,7 @@ class RunTests(unittest.TestCase):
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", SAFE_ENV)
 
     def test_missing_log_tool_is_reported(self):
-        os.environ["FSX_LOG"] = os.path.join(self.tmp.name, "nope")
+        os.environ["CRESC_LOG"] = os.path.join(self.tmp.name, "nope")
         with self.assertRaises(SessionError):
             self.run_sh("exit 0")
 

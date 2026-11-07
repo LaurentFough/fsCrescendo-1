@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.6.0  (2026-11-07)
+#= Makefile  -- version 1.7.0  (2026-11-07)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.6.0
+MAKEFILE_VERSION := 1.7.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -92,7 +92,7 @@ endef
         install run logs logs-sandbox logs-replay crashes \
         sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign eslogger \
         clean distclean \
-        check-signing install-hooks local-sign probe-sandbox-net probe-sandbox-net-json fsx fsx-test \
+        check-signing install-hooks local-sign probe-sandbox-net probe-sandbox-net-json cresc cresc-test \
         require-macos require-xcode require-clt require-team require-sign require-safe-builddir
 
 #= ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ list: require-xcode #= List the Xcode targets, configurations and schemes
 
 selftest: #= Sanity-check this Makefile with dry runs (works on any OS)
 	@$(MAKE) --no-print-directory help >/dev/null
-	@for t in build build-xcode build-clt fsx fsx-test probe-sandbox-net probe-sandbox-net-json local-sign check-signing install-hooks build-lib build-ext build-signed install run logs logs-sandbox logs-replay crashes sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign clean; do \
+	@for t in build build-xcode build-clt cresc cresc-test probe-sandbox-net probe-sandbox-net-json local-sign check-signing install-hooks build-lib build-ext build-signed install run logs logs-sandbox logs-replay crashes sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign clean; do \
 	  $(MAKE) --no-print-directory -n $$t TEAM=ABCDE12345 >/dev/null 2>&1 || { echo "selftest FAIL: $$t" >&2; exit 1; }; \
 	done
 	@sh $(XCODE_DETECT) --env >/dev/null || { echo "selftest FAIL: $(XCODE_DETECT)" >&2; exit 1; }
@@ -265,16 +265,16 @@ logs-sandbox: require-macos #= Stream Seatbelt (Sandbox) denials mentioning NAME
 	$(call say,watching Sandbox denials for: $$NAMES); \
 	exec log stream --style compact --predicate "sender == \"Sandbox\" AND eventMessage CONTAINS \"deny\" AND ($$pred)"
 
-fsx: #= Show the fsx engine help (sandbox-denial triage and managed sandbox sessions, tools/fsx)
-	@cd tools/fsx && $(PYTHON) -m fsx --help
+cresc: #= Show the cresc engine help (sandbox-denial triage and managed sandbox sessions, tools/cresc)
+	@cd tools/cresc && $(PYTHON) -m cresc --help
 
-fsx-test: #= Run the fsx unit and end-to-end tests (any OS; needs only python3 3.9+)
-	@cd tools/fsx && $(PYTHON) -W ignore::ResourceWarning -m unittest discover -s tests -t .
+cresc-test: #= Run the cresc unit and end-to-end tests (any OS; needs only python3 3.9+)
+	@cd tools/cresc && $(PYTHON) -W ignore::ResourceWarning -m unittest discover -s tests -t .
 
 probe-sandbox-net: require-macos #= Test how sandbox-exec handles outbound-network rules here (add --external via the script)
 	@sh scripts/probe-sandbox-net.sh
 
-probe-sandbox-net-json: require-macos #= Same probe, machine-readable JSON (fsx.sandbox-net-probe/1)
+probe-sandbox-net-json: require-macos #= Same probe, machine-readable JSON (cresc.sandbox-net-probe/1)
 	@sh scripts/probe-sandbox-net.sh --json
 
 logs-replay: require-macos #= Show Sandbox denials from the last LAST (default 5m) for NAMES

@@ -1,4 +1,4 @@
-#= python3 -m fsx  (run from tools/fsx, or with PYTHONPATH=tools/fsx)
+#= python3 -m cresc  (run from tools/cresc, or with PYTHONPATH=tools/cresc)
 import sys
 
 from .cli import main

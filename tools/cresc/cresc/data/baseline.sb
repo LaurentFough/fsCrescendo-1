@@ -1,5 +1,5 @@
 ;= ---------------------------------------------------------------------------
-;= fsx baseline profile  -- version 1  (managed by fsx; grants are appended below)
+;= cresc baseline profile  -- version 1  (managed by cresc; grants are appended below)
 ;= Deny-default Seatbelt profile. Parameters (sandbox-exec -D key=value):
 ;=   TARGET                    absolute, symlink-free path of the binary to run
 ;=   WRITE_DIR_0 .. WRITE_DIR_7  writable directories, absolute and symlink-free

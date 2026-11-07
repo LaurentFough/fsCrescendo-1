@@ -4,7 +4,7 @@
 #= no Apple Team ID, no certificate identity, no provisioning profile.
 #= Meant for pre-commit hooks and CI; POSIX sh + awk, runs on macOS and Linux.
 #= Usage: check-signing.sh [--json] [--quiet] [PBXPROJ]
-#=   --json   machine-readable result (schema fsx.signing-check/1)
+#=   --json   machine-readable result (schema cresc.signing-check/1)
 #=   --quiet  print only violations
 #=   PBXPROJ  default: CrescendoFramework.xcodeproj/project.pbxproj (relative to the repo root)
 #= Exit   : 0 ok | 1 violations | 64 usage | 66 file missing
@@ -57,7 +57,7 @@ FAILS=$(printf '%s\n' "$RAW" | awk -F'\t' '$4 == "FAIL"' | wc -l | tr -d ' ')
 if [ "$JSON" = 1 ]; then
   printf '%s\n' "$RAW" | awk -F'\t' -v file="$FILE" -v fails="$FAILS" -v ver="$VERSION" '
     function esc(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return s }
-    BEGIN { printf "{\"schema\":\"fsx.signing-check/1\",\"tool_version\":\"%s\",\"file\":\"%s\",\"ok\":%s,\"violations\":%d,\"items\":[", ver, esc(file), (fails == 0 ? "true" : "false"), fails }
+    BEGIN { printf "{\"schema\":\"cresc.signing-check/1\",\"tool_version\":\"%s\",\"file\":\"%s\",\"ok\":%s,\"violations\":%d,\"items\":[", ver, esc(file), (fails == 0 ? "true" : "false"), fails }
     NF >= 4 { printf "%s{\"line\":%d,\"key\":\"%s\",\"value\":\"%s\",\"verdict\":\"%s\"}", (n++ ? "," : ""), $1, esc($2), esc($3), $4 }
     END { print "]}" }'
 else

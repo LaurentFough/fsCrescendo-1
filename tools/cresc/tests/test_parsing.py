@@ -4,10 +4,10 @@ import json
 import os
 import unittest
 
-from fsx.classify import classify, is_path_search, path_entries, risk
-from fsx.denials import Denial, Group, fold, parse_line, parse_lines
-from fsx.rules import Rule, prefix_suggestions, q, synthesize
-from fsx.triage import summary, suggested_prefixes, triage
+from cresc.classify import classify, is_path_search, path_entries, risk
+from cresc.denials import Denial, Group, fold, parse_line, parse_lines
+from cresc.rules import Rule, prefix_suggestions, q, synthesize
+from cresc.triage import summary, suggested_prefixes, triage
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(HERE, "fixtures", "sandbox-denials.log")

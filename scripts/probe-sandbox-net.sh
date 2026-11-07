@@ -6,7 +6,7 @@
 #=   - what the denial line looks like in the unified log
 #= It talks to a throwaway HTTP server on 127.0.0.1, so DNS and the internet do not matter.
 #= Usage: probe-sandbox-net.sh [--json] [--external]
-#=   --json      machine-readable result (schema fsx.sandbox-net-probe/1) instead of a table
+#=   --json      machine-readable result (schema cresc.sandbox-net-probe/1) instead of a table
 #=   --external  also try https://example.com (DNS + TLS) with a (remote tcp "*:443") allow rule
 #= Env  : PORT (default 8765), PROBE_TIMEOUT seconds (default 5)
 #= Needs: macOS, sandbox-exec, curl, python3. Changes nothing on the system; the server is stopped on exit.
@@ -149,7 +149,7 @@ fi
 
 if [ "$JSON" = 1 ]; then
   esc() { sed 's/\\/\\\\/g; s/"/\\"/g'; }
-  printf '{"schema":"fsx.sandbox-net-probe/1","tool_version":"%s","port":%s,"macos":"%s","findings":[' "$VERSION" "$PORT" "$(sw_vers -productVersion 2>/dev/null)"
+  printf '{"schema":"cresc.sandbox-net-probe/1","tool_version":"%s","port":%s,"macos":"%s","findings":[' "$VERSION" "$PORT" "$(sw_vers -productVersion 2>/dev/null)"
   first=1
   printf '%s\n' "$FIND" | while IFS= read -r line; do
     [ -n "$line" ] || continue

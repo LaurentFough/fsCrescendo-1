@@ -17,7 +17,7 @@ from .rules import Rule
 
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "baseline.sb")
-_GRANT_HEADER = ";= --- grants managed by fsx (change them with `fsx profile`, not by hand) ---"
+_GRANT_HEADER = ";= --- grants managed by cresc (change them with `cresc profile`, not by hand) ---"
 
 
 class ProfileError(Exception):
@@ -25,7 +25,14 @@ class ProfileError(Exception):
 
 
 def default_store() -> str:
-    return os.environ.get("FSX_HOME") or os.path.join(os.path.expanduser("~"), ".local", "share", "fsx")
+    #= CRESC_HOME wins. FSX_HOME and ~/.local/share/fsx are the names used before the rename (fsx -> cresc):
+    #= they are still honoured so existing profiles and runs are not orphaned.
+    env = os.environ.get("CRESC_HOME") or os.environ.get("FSX_HOME")
+    if env:
+        return env
+    base = os.path.join(os.path.expanduser("~"), ".local", "share")
+    new, old = os.path.join(base, "cresc"), os.path.join(base, "fsx")
+    return old if (not os.path.isdir(new) and os.path.isdir(old)) else new
 
 
 def validate_sbpl(text: str) -> None:
