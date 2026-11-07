@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -76,6 +77,25 @@ def build_argv(sandbox_exec: str, profile_path: str, target: str, write_dirs: Se
     for i, d in enumerate(slots):
         argv += ["-D", "WRITE_DIR_%d=%s" % (i, d)]
     return argv + ["-D", "TARGET=%s" % target, "-f", profile_path, target] + list(args)
+
+
+#= Variables the program receives by default. Everything else in fsx's environment (tokens, API keys, ...) is withheld:
+#= a suspect binary could otherwise read secrets from its environment without touching any file.
+SAFE_ENV = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "TZ")
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def child_env(pass_env: Sequence[str] = (), inherit: bool = False,
+              base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """The environment for the sandboxed program: the safe variables plus those named in pass_env, or everything."""
+    for name in pass_env:
+        if not _ENV_NAME.match(name):
+            raise SessionError("invalid environment variable name: %r" % name)
+    src = dict(os.environ if base is None else base)
+    if inherit:
+        return src
+    keep = set(SAFE_ENV) | set(pass_env)
+    return {k: v for k, v in src.items() if k in keep}
 
 
 def watch_predicate(names: Sequence[str]) -> str:
@@ -189,7 +209,8 @@ def next_run_number(profile: Profile) -> int:
 def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Sequence[str] = (),
              watch: Sequence[str] = (), timeout: Optional[float] = None, settle: float = 3.0,
              startup_wait: float = 1.0, grace: float = 3.0, sandbox_exec: Optional[str] = None,
-             log_bin: Optional[str] = None, on_denial: Optional[Callable[[Denial], None]] = None) -> RunResult:
+             log_bin: Optional[str] = None, on_denial: Optional[Callable[[Denial], None]] = None,
+             pass_env: Sequence[str] = (), inherit_env: bool = False) -> RunResult:
     """Run `target` once under the profile's CURRENT version; return the run record (also saved on disk)."""
     sbx = sandbox_exec or os.environ.get("FSX_SANDBOX_EXEC") or "sandbox-exec"
     target = resolve_target(target)
@@ -200,6 +221,8 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
     rdir = os.path.join(profile.runs_dir(), str(number))
     os.makedirs(rdir)
     argv = build_argv(sbx, profile.snapshot_path(version), target, dirs, args)
+    env = child_env(pass_env, inherit_env)
+    cwd = dirs[0]       #= start inside the first write dir: the program neither sees nor needs the launcher's directory
 
     watcher = LogWatcher(names, log_bin=log_bin, on_denial=on_denial)
     watcher.start()
@@ -214,7 +237,8 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
     timed_out = interrupted = False
     with open(out_path, "wb") as fout, open(err_path, "wb") as ferr:
         try:
-            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=fout, stderr=ferr, start_new_session=True)
+            proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=fout, stderr=ferr, start_new_session=True,
+                                    cwd=cwd, env=env)
         except OSError as exc:
             watcher.stop()
             raise SessionError("cannot start %s: %s" % (sbx, exc))
@@ -243,7 +267,8 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
     with open(err_path, "rb") as fh:
         tail = fh.read()[-300:].decode("utf-8", "replace")
     meta = {"schema": SCHEMAS["run"], "run": number, "profile": profile.name, "profile_version": version,
-            "target": target, "args": list(args), "write_dirs": dirs, "watch": names, "argv": argv,
+            "target": target, "args": list(args), "write_dirs": dirs, "cwd": cwd, "watch": names, "argv": argv,
+            "env_inherited": bool(inherit_env), "env_names": sorted(env),     #= names only, never values
             "exit": proc.returncode, "timed_out": timed_out, "interrupted": interrupted,
             "duration_s": round(duration, 3), "started": started_wall,
             "denials_total": sum(d.count for d in denials), "groups": len(groups),

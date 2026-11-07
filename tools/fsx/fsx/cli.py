@@ -200,7 +200,8 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
 def run_args(args: argparse.Namespace) -> Dict:
     return dict(target=args.target, write_dirs=args.write_dir, args=args.cmd_args, watch=args.watch,
-                timeout=args.timeout, settle=args.settle, startup_wait=args.startup_wait)
+                timeout=args.timeout, settle=args.settle, startup_wait=args.startup_wait,
+                pass_env=args.pass_env, inherit_env=args.inherit_env)
 
 
 def report_run(result, profile: Profile, json_out: bool, entries: Sequence[str], home: str) -> List[Item]:
@@ -330,6 +331,10 @@ def add_run_options(p: argparse.ArgumentParser) -> None:
     p.add_argument("--target", required=True, help="program to run (name on PATH or absolute path)")
     p.add_argument("--write-dir", action="append", required=True, help="writable directory (repeatable, max 8)")
     p.add_argument("--watch", action="append", default=[], help="extra process name whose denials to collect (repeatable)")
+    p.add_argument("--pass-env", action="append", default=[], metavar="NAME",
+                   help="also give the program this environment variable (repeatable); by default it gets only "
+                        "PATH HOME USER LOGNAME LANG LC_ALL LC_CTYPE TERM TMPDIR TZ")
+    p.add_argument("--inherit-env", action="store_true", help="give the program your WHOLE environment (not recommended)")
     p.add_argument("--timeout", type=float, help="stop the program after this many seconds")
     p.add_argument("--settle", type=float, default=3.0, help="seconds to keep reading the log after exit (default 3)")
     p.add_argument("--startup-wait", type=float, default=1.0, help="seconds to let the log reader start (default 1)")

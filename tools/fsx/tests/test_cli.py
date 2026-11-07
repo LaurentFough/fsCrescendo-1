@@ -175,7 +175,8 @@ class RunWorkflow(CliCase):
                 fh.write(json.dumps({"eventMessage": "Sandbox: %s(4242) deny(1) %s %s" % (proc, op, target)}) + "\n")
 
     def run_args(self):
-        return ["--target", "sh", "--write-dir", self.work, "--settle", "0.4", "--startup-wait", "0.1"]
+        return ["--target", "sh", "--write-dir", self.work, "--settle", "0.4", "--startup-wait", "0.1",
+                "--pass-env", "FAKE_ARGV_OUT"]
 
     def test_run_json_runs_compare(self):
         d = json.loads(self.fsx("run", "demo", *self.run_args(), "--json", "--", "-c", "exit 2").stdout)

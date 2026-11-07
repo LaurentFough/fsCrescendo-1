@@ -58,6 +58,10 @@ Program arguments go after a literal `--`. Data lives in `$FSX_HOME` (default `~
 
 ## Safety rules built in
 
+- The program starts **inside its first write directory**, never in the directory you launched fsx from, and receives only a
+  safe set of environment variables (`PATH HOME USER LOGNAME LANG LC_ALL LC_CTYPE TERM TMPDIR TZ`). Tokens and API keys in your
+  shell stay out of its reach; add variables with `--pass-env NAME`, or everything with `--inherit-env`. Run records list
+  variable names only, never values.
 - Write directories must be absolute and not symlinks; `/`, `$HOME` and its ancestors are refused; directories fsx creates get mode 700, existing ones are not touched.
 - Generated rules are **allows only**; strings are escaped and control characters refused; a profile that does not parse is never saved.
 - Grants that need confirmation are all-or-nothing: if any selected rule needs `--confirm` and it is missing, nothing is granted.

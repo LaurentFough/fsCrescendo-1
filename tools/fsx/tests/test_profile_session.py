@@ -14,7 +14,8 @@ import unittest
 from fsx.denials import Group
 from fsx.profile import Profile, ProfileError, validate_sbpl
 from fsx.rules import Rule
-from fsx.session import (MAX_WRITE_DIRS, SessionError, build_argv, compare_groups, kill_tree, latest_run_number,
+from fsx.session import (MAX_WRITE_DIRS, SAFE_ENV, SessionError, build_argv, child_env, compare_groups, kill_tree,
+                         latest_run_number,
                          list_runs, load_run, resolve_target, resolve_write_dirs, run_once, watch_predicate)
 
 FAKE_SANDBOX_EXEC = """#!/usr/bin/env python3
@@ -248,7 +249,7 @@ class RunTests(unittest.TestCase):
                                      "eventMessage": "Sandbox: %s(4242) deny(1) %s %s" % (proc, op, target)}) + "\n")
 
     def run_sh(self, script, **kw):
-        opts = dict(settle=0.4, startup_wait=0.1, grace=0.5)
+        opts = dict(settle=0.4, startup_wait=0.1, grace=0.5, pass_env=["FAKE_ARGV_OUT"])    #= the fake sandbox-exec needs it
         opts.update(kw)
         return run_once(self.profile, "sh", [self.work], ["-c", script], **opts)
 
@@ -297,6 +298,42 @@ class RunTests(unittest.TestCase):
         self.assertEqual([r["run"] for r in list_runs(self.profile)], [1, 2])
         self.assertEqual(latest_run_number(self.profile), 2)
         self.assertEqual(len(load_run(self.profile, 1).groups), 2)
+
+    def test_program_starts_in_the_first_write_dir_not_in_the_launchers_directory(self):
+        res = self.run_sh("pwd")
+        self.assertEqual(os.path.realpath(open(res.meta["stdout"]).read().strip()), os.path.realpath(self.work))
+        self.assertEqual(res.meta["cwd"], os.path.realpath(self.work))
+        self.assertNotEqual(os.path.realpath(os.getcwd()), os.path.realpath(self.work))
+
+    def test_secrets_in_the_environment_are_withheld_by_default(self):
+        os.environ["SECRET_TOKEN"] = "hunter2"
+        try:
+            hidden = self.run_sh('echo "[$SECRET_TOKEN][$HOME][${FSX_HOME:-unset}]"')
+            out = open(hidden.meta["stdout"]).read().strip()
+            self.assertTrue(out.startswith("[]["), out)               #= the token is not visible
+            self.assertIn("SECRET_TOKEN", "".join(os.environ))         #= ...although it is set in our own environment
+            self.assertNotIn("SECRET_TOKEN", hidden.meta["env_names"])
+            self.assertIn("PATH", hidden.meta["env_names"])
+            shown = self.run_sh('echo "[$SECRET_TOKEN]"', pass_env=["SECRET_TOKEN", "FAKE_ARGV_OUT"])
+            self.assertEqual(open(shown.meta["stdout"]).read().strip(), "[hunter2]")
+            self.assertIn("SECRET_TOKEN", shown.meta["env_names"])
+            self.assertNotIn("hunter2", json.dumps(shown.meta))        #= the record keeps names, never values
+            every = self.run_sh('echo "[$SECRET_TOKEN]"', inherit_env=True)
+            self.assertEqual(open(every.meta["stdout"]).read().strip(), "[hunter2]")
+            self.assertTrue(every.meta["env_inherited"])
+        finally:
+            os.environ.pop("SECRET_TOKEN", None)
+
+    def test_child_env_rules(self):
+        base = {"PATH": "/usr/bin", "HOME": "/h", "AWS_SECRET_ACCESS_KEY": "x", "FOO": "1"}
+        self.assertEqual(child_env(base=base), {"PATH": "/usr/bin", "HOME": "/h"})
+        self.assertEqual(child_env(["FOO"], base=base), {"PATH": "/usr/bin", "HOME": "/h", "FOO": "1"})
+        self.assertEqual(child_env(inherit=True, base=base), base)
+        for bad in ("A B", "1X", "A=B", "", "A;rm"):
+            with self.assertRaises(SessionError, msg=bad):
+                child_env([bad], base=base)
+        self.assertIn("PATH", SAFE_ENV)
+        self.assertNotIn("AWS_SECRET_ACCESS_KEY", SAFE_ENV)
 
     def test_missing_log_tool_is_reported(self):
         os.environ["FSX_LOG"] = os.path.join(self.tmp.name, "nope")
