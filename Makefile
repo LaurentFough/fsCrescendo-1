@@ -1,8 +1,9 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.0.1  (2026-11-07)
+#= Makefile  -- version 1.1.0  (2026-11-07)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
-#= Needs  : macOS 13+ and Xcode (xcodebuild) for build targets. Optional: swiftlint.
+#= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
+#=          (compile check only: no .app, no signing). Optional: swiftlint.
 #=          Info targets (help, doctor, version, selftest) also run on Linux.
 #= Compat : written for GNU Make 3.81 (the version Apple ships) and newer.
 #= Notes  : products go to ./build (git-ignored). Builds are UNSIGNED by default:
@@ -10,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.0.1
+MAKEFILE_VERSION := 1.1.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -28,12 +29,15 @@ NAMES       ?= Crescendo
 LAST        ?= 5m
 ES_EVENTS   ?= exec fork exit create rename unlink
 LOGFILE     ?=
+BUILD_MODE  ?= auto
+MIN_MACOS   ?= 13.0
+SWIFTC      ?= xcrun swiftc
 CONFIRM     ?= 0
 V           ?= 0
 
 #= user-supplied values reach recipes through the environment ("$$VAR"), never pasted into shell text,
 #= so quotes or spaces in them are data, not shell syntax.
-export NAMES LAST ES_EVENTS TEAM
+export NAMES LAST ES_EVENTS TEAM BUILD_MODE
 
 SYMROOT  := $(CURDIR)/$(BUILD_DIR)/products
 OBJROOT  := $(CURDIR)/$(BUILD_DIR)/obj
@@ -49,17 +53,27 @@ XCB            := xcodebuild -project $(PROJECT) -configuration $(CONFIG) SYMROO
 UNSIGNED_FLAGS := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
 SIGNED_FLAGS   := CODE_SIGN_STYLE=Automatic $(if $(TEAM),DEVELOPMENT_TEAM=$(TEAM)) -allowProvisioningUpdates
 
+#= Command Line Tools mode: swiftc/clang against the macOS SDK. SDK_PATH is lazy (xcrun only runs when used).
+ARCH      := $(shell uname -m)
+SDK_PATH   = $(shell xcrun --sdk macosx --show-sdk-path 2>/dev/null)
+CLT_OUT   := $(CURDIR)/$(BUILD_DIR)/clt
+LIB_SRCS  := $(wildcard libCrescendo/*.swift)
+EXT_SRCS  := CrescendoExtension/main.swift CrescendoExtension/IPCConnection.swift
+APP_SRCS  := $(wildcard Crescendo/*.swift) CrescendoExtension/IPCConnection.swift
+SWIFT_COMMON = -sdk "$(SDK_PATH)" -target $(ARCH)-apple-macosx$(MIN_MACOS) -swift-version 5
+ES_MODULE_DIR := libCrescendo/EndpointModule
+
 #= say: timestamped log line to stdout (and appended to $(LOGFILE) if set). Avoid commas in the text.
 define say
 printf '%s make[$(MAKEFILE_VERSION)]: %s\n' "$$(date '+%Y-%m-%dT%H:%M:%S')" "$(1)" $(if $(LOGFILE),| tee -a "$(LOGFILE)")
 endef
 
 .PHONY: help version doctor list selftest \
-        build build-lib build-ext build-signed lint check test \
+        build build-xcode build-clt build-lib build-ext build-signed lint check test \
         install run logs logs-sandbox logs-replay crashes \
         sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign eslogger \
         clean distclean \
-        require-macos require-xcode require-team require-safe-builddir
+        require-macos require-xcode require-clt require-team require-safe-builddir
 
 #= ---------------------------------------------------------------------------
 #= Info
@@ -83,8 +97,8 @@ version: #= Print Makefile and git versions
 
 doctor: #= Environment report: OS, Xcode, tools, SIP/AMFI, repo state
 	@echo "== host";  uname -sm; if command -v sw_vers >/dev/null; then sw_vers; else echo "  (not macOS: build targets unavailable)"; fi
-	@echo "== tools"; for t in xcodebuild swiftlint git codesign systemextensionsctl eslogger log; do printf '  %-22s' $$t; command -v $$t || echo "-"; done
-	@echo "== xcode"; if command -v xcodebuild >/dev/null; then xcodebuild -version; else echo "  xcodebuild not available"; fi
+	@echo "== tools"; for t in xcodebuild swiftc xcrun swiftlint git codesign systemextensionsctl eslogger log; do printf '  %-22s' $$t; command -v $$t || echo "-"; done
+	@echo "== xcode"; if command -v xcode-select >/dev/null; then echo "  developer dir: $$(xcode-select -p 2>/dev/null)"; fi; if command -v xcodebuild >/dev/null && xcodebuild -version >/dev/null 2>&1; then xcodebuild -version; echo "  make build -> full Xcode"; else echo "  full Xcode not usable; make build -> Command Line Tools (compile check only)"; fi
 	@echo "== sip / amfi (only a dev VM needs these relaxed; see README)"; if command -v csrutil >/dev/null; then csrutil status; else echo "  csrutil n/a"; fi; if command -v nvram >/dev/null; then nvram boot-args 2>/dev/null || echo "  boot-args: (none)"; fi
 	@echo "== repo"; git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "  not a git checkout"; if [ -d "$(PROJECT)" ]; then echo "  project: $(PROJECT) ok"; else echo "  project: $(PROJECT) MISSING (run from the repo root)"; fi
 
@@ -93,7 +107,7 @@ list: require-xcode #= List the Xcode targets, configurations and schemes
 
 selftest: #= Sanity-check this Makefile with dry runs (works on any OS)
 	@$(MAKE) --no-print-directory help >/dev/null
-	@for t in build build-lib build-ext build-signed install run logs logs-sandbox logs-replay crashes sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign clean; do \
+	@for t in build build-xcode build-clt build-lib build-ext build-signed install run logs logs-sandbox logs-replay crashes sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign clean; do \
 	  $(MAKE) --no-print-directory -n $$t TEAM=ABCDE12345 >/dev/null 2>&1 || { echo "selftest FAIL: $$t" >&2; exit 1; }; \
 	done
 	@$(call say,selftest ok)
@@ -109,6 +123,13 @@ require-xcode: require-macos
 	@[ -d "$(PROJECT)" ] || { echo "ERROR: $(PROJECT) not found (run make from the repo root)" >&2; exit 66; }
 	@case "$(CURDIR)" in *" "*) echo "ERROR: repo path contains a space; unsupported by this Makefile: $(CURDIR)" >&2; exit 65;; esac
 
+require-clt: require-macos
+	@command -v xcrun >/dev/null || { echo "ERROR: xcrun not found - install the Command Line Tools: xcode-select --install" >&2; exit 2; }
+	@xcrun --sdk macosx --show-sdk-path >/dev/null 2>&1 || { echo "ERROR: no macOS SDK found - run: xcode-select --install" >&2; exit 2; }
+	@xcrun --find swiftc >/dev/null 2>&1 || { echo "ERROR: swiftc not found - run: xcode-select --install" >&2; exit 2; }
+	@[ -d "$(ES_MODULE_DIR)" ] || { echo "ERROR: $(ES_MODULE_DIR) not found (run make from the repo root)" >&2; exit 66; }
+	@case "$(CURDIR)" in *" "*) echo "ERROR: repo path contains a space; unsupported by this Makefile: $(CURDIR)" >&2; exit 65;; esac
+
 require-team:
 	@printf '%s' "$$TEAM" | grep -Eq '^[A-Z0-9]{10}$$' || { echo "ERROR: set TEAM=<10-character Apple Team ID>" >&2; exit 64; }
 
@@ -118,10 +139,32 @@ require-safe-builddir:
 #= ---------------------------------------------------------------------------
 #= Build and test
 #= ---------------------------------------------------------------------------
-build: require-xcode #= Compile app + extension + framework UNSIGNED (compile check only)
-	@$(call say,building $(APP_TARGET) [$(CONFIG)] unsigned)
+build: require-macos #= Build: full Xcode if usable, else Command Line Tools compile check (BUILD_MODE=auto|xcode|clt)
+	@mode="$$BUILD_MODE"; \
+	if [ "$$mode" = auto ]; then \
+	  if command -v xcodebuild >/dev/null && xcodebuild -version >/dev/null 2>&1; then mode=xcode; else mode=clt; fi; \
+	fi; \
+	case "$$mode" in xcode|clt) ;; *) echo "ERROR: BUILD_MODE must be auto, xcode or clt (got: $$mode)" >&2; exit 64;; esac; \
+	$(call say,build mode: $$mode); \
+	exec $(MAKE) --no-print-directory build-$$mode
+
+build-xcode: require-xcode #= Full Xcode build of app + extension + framework, UNSIGNED (no signing)
+	@$(call say,building $(APP_TARGET) [$(CONFIG)] unsigned with xcodebuild)
 	@$(XCB) -target $(APP_TARGET) $(QUIET) $(UNSIGNED_FLAGS) build
 	@$(call say,build ok: $(APP_PATH))
+
+build-clt: require-clt #= Command Line Tools compile check ONLY: no .app, no storyboards, no signing
+	@$(call say,Command Line Tools mode: compile check only - no .app is produced)
+	@mkdir -p "$(CLT_OUT)"
+	@$(call say,[1/4] libCrescendo: compile the Swift module)
+	@$(SWIFTC) $(SWIFT_COMMON) -I $(ES_MODULE_DIR) -parse-as-library -module-name libCrescendo -emit-module -emit-module-path "$(CLT_OUT)/libCrescendo.swiftmodule" $(LIB_SRCS)
+	@$(call say,[2/4] CrescendoExtension: type-check)
+	@$(SWIFTC) $(SWIFT_COMMON) -I "$(CLT_OUT)" -I $(ES_MODULE_DIR) -module-name CrescendoExtension -typecheck $(EXT_SRCS)
+	@$(call say,[3/4] Crescendo app Swift sources: type-check)
+	@$(SWIFTC) $(SWIFT_COMMON) -I "$(CLT_OUT)" -I $(ES_MODULE_DIR) -import-objc-header Crescendo/Crescendo-Bridging-Header.h -module-name Crescendo -typecheck $(APP_SRCS)
+	@$(call say,[4/4] PFMoveApplication.m: syntax check)
+	@xcrun clang -fsyntax-only -fno-objc-arc -isysroot "$(SDK_PATH)" -target $(ARCH)-apple-macosx$(MIN_MACOS) Crescendo/ThirdParty/PFMoveApplication.m
+	@$(call say,Command Line Tools compile check passed - for a runnable app use full Xcode: make build-signed TEAM=<id>)
 
 build-lib: require-xcode #= Compile only the libCrescendo framework (unsigned)
 	@$(call say,building $(LIB_TARGET) [$(CONFIG)] unsigned)
