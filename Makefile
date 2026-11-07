@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.2.0  (2026-11-07)
+#= Makefile  -- version 1.3.0  (2026-11-07)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.2.0
+MAKEFILE_VERSION := 1.3.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -30,6 +30,8 @@ LAST        ?= 5m
 ES_EVENTS   ?= exec fork exit create rename unlink
 LOGFILE     ?=
 BUILD_MODE  ?= auto
+SIGN        ?= local
+FORCE       ?= 0
 MIN_MACOS   ?= 13.0
 SWIFTC      ?= xcrun swiftc
 CONFIRM     ?= 0
@@ -37,7 +39,7 @@ V           ?= 0
 
 #= user-supplied values reach recipes through the environment ("$$VAR"), never pasted into shell text,
 #= so quotes or spaces in them are data, not shell syntax.
-export NAMES LAST ES_EVENTS TEAM BUILD_MODE
+export NAMES LAST ES_EVENTS TEAM BUILD_MODE SIGN FORCE CONFIRM
 
 SYMROOT  := $(CURDIR)/$(BUILD_DIR)/products
 OBJROOT  := $(CURDIR)/$(BUILD_DIR)/obj
@@ -57,6 +59,14 @@ XCODE_DIR       = $(eval XCODE_DIR := $(shell sh $(XCODE_DETECT) --dir 2>/dev/nu
 XCB             = $(if $(XCODE_DIR),DEVELOPER_DIR="$(XCODE_DIR)" )xcodebuild -project $(PROJECT) -configuration $(CONFIG) SYMROOT=$(SYMROOT) OBJROOT=$(OBJROOT)
 UNSIGNED_FLAGS := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
 SIGNED_FLAGS   := CODE_SIGN_STYLE=Automatic $(if $(TEAM),DEVELOPMENT_TEAM=$(TEAM)) -allowProvisioningUpdates
+
+#= SIGN picks how xcodebuild signs: local = ad-hoc "Sign to Run Locally" (default), none = unsigned,
+#=                                 team  = your Apple Team ID (needs TEAM=<id>).
+LOCAL_FLAGS      := CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= CODE_SIGNING_REQUIRED=YES CODE_SIGNING_ALLOWED=YES
+SIGN_FLAGS_local := $(LOCAL_FLAGS)
+SIGN_FLAGS_none  := $(UNSIGNED_FLAGS)
+SIGN_FLAGS_team  := $(SIGNED_FLAGS)
+SIGN_FLAGS        = $(SIGN_FLAGS_$(SIGN))
 
 #= Command Line Tools mode: swiftc/clang against the macOS SDK. SDK_PATH is lazy (xcrun only runs when used).
 ARCH      := $(shell uname -m)
@@ -78,7 +88,8 @@ endef
         install run logs logs-sandbox logs-replay crashes \
         sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign eslogger \
         clean distclean \
-        require-macos require-xcode require-clt require-team require-safe-builddir
+        check-signing install-hooks \
+        require-macos require-xcode require-clt require-team require-sign require-safe-builddir
 
 #= ---------------------------------------------------------------------------
 #= Info
@@ -94,7 +105,9 @@ help: #= Show this help
 	@echo "  make doctor                       # what is installed / enabled"
 	@echo "  make build                        # Xcode if usable, else Command Line Tools compile check"
 	@echo "  make build DEVELOPER_DIR=/path/Xcode.app/Contents/Developer   # pick an Xcode without sudo"
-	@echo "  make build-signed TEAM=ABCDE12345 # signed build (needs your ES entitlement)"
+	@echo "  make build                        # signs locally (ad-hoc); SIGN=none or SIGN=team TEAM=<id> to change"
+	@echo "  make check-signing                # project must only use Sign to Run Locally"
+	@echo "  make build-signed TEAM=ABCDE12345 # signed with YOUR team (never commit that setting)"
 	@echo "  make logs-sandbox NAMES='the-binary ioreg'"
 
 version: #= Print Makefile and git versions
@@ -113,7 +126,7 @@ list: require-xcode #= List the Xcode targets, configurations and schemes
 
 selftest: #= Sanity-check this Makefile with dry runs (works on any OS)
 	@$(MAKE) --no-print-directory help >/dev/null
-	@for t in build build-xcode build-clt build-lib build-ext build-signed install run logs logs-sandbox logs-replay crashes sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign clean; do \
+	@for t in build build-xcode build-clt check-signing install-hooks build-lib build-ext build-signed install run logs logs-sandbox logs-replay crashes sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign clean; do \
 	  $(MAKE) --no-print-directory -n $$t TEAM=ABCDE12345 >/dev/null 2>&1 || { echo "selftest FAIL: $$t" >&2; exit 1; }; \
 	done
 	@sh $(XCODE_DETECT) --env >/dev/null || { echo "selftest FAIL: $(XCODE_DETECT)" >&2; exit 1; }
@@ -137,6 +150,9 @@ require-clt: require-macos
 	@[ -d "$(ES_MODULE_DIR)" ] || { echo "ERROR: $(ES_MODULE_DIR) not found (run make from the repo root)" >&2; exit 66; }
 	@case "$(CURDIR)" in *" "*) echo "ERROR: repo path contains a space; unsupported by this Makefile: $(CURDIR)" >&2; exit 65;; esac
 
+require-sign:
+	@case "$$SIGN" in local|none) ;; team) printf '%s' "$$TEAM" | grep -Eq '^[A-Z0-9]{10}$$' || { echo "ERROR: SIGN=team needs TEAM=<10-character Team ID>" >&2; exit 64; };; *) echo "ERROR: SIGN must be local, none or team (got: $$SIGN)" >&2; exit 64;; esac
+
 require-team:
 	@printf '%s' "$$TEAM" | grep -Eq '^[A-Z0-9]{10}$$' || { echo "ERROR: set TEAM=<10-character Apple Team ID>" >&2; exit 64; }
 
@@ -156,9 +172,9 @@ build: require-macos #= Build: full Xcode if usable, else Command Line Tools com
 	if [ "$$mode" = clt ]; then sh $(XCODE_DETECT) --why >&2 || true; fi; \
 	exec $(MAKE) --no-print-directory build-$$mode
 
-build-xcode: require-xcode #= Full Xcode build of app + extension + framework, UNSIGNED (no signing)
-	@$(call say,building $(APP_TARGET) [$(CONFIG)] unsigned with xcodebuild)
-	@$(XCB) -target $(APP_TARGET) $(QUIET) $(UNSIGNED_FLAGS) build
+build-xcode: require-xcode require-sign #= Full Xcode build of app + extension + framework (SIGN=local|none|team, default local)
+	@$(call say,building $(APP_TARGET) [$(CONFIG)] sign=$(SIGN) with xcodebuild)
+	@$(XCB) -target $(APP_TARGET) $(QUIET) $(SIGN_FLAGS) build
 	@$(call say,build ok: $(APP_PATH))
 
 build-clt: require-clt #= Command Line Tools compile check ONLY: no .app, no storyboards, no signing
@@ -174,15 +190,15 @@ build-clt: require-clt #= Command Line Tools compile check ONLY: no .app, no sto
 	@xcrun clang -fsyntax-only -fno-objc-arc -isysroot "$(SDK_PATH)" -target $(ARCH)-apple-macosx$(MIN_MACOS) Crescendo/ThirdParty/PFMoveApplication.m
 	@$(call say,Command Line Tools compile check passed - for a runnable app use full Xcode: make build-signed TEAM=<id>)
 
-build-lib: require-xcode #= Compile only the libCrescendo framework (unsigned)
-	@$(call say,building $(LIB_TARGET) [$(CONFIG)] unsigned)
-	@$(XCB) -target $(LIB_TARGET) $(QUIET) $(UNSIGNED_FLAGS) build
+build-lib: require-xcode require-sign #= Compile only the libCrescendo framework (SIGN as above)
+	@$(call say,building $(LIB_TARGET) [$(CONFIG)] sign=$(SIGN))
+	@$(XCB) -target $(LIB_TARGET) $(QUIET) $(SIGN_FLAGS) build
 
-build-ext: require-xcode #= Compile only the system extension (unsigned)
-	@$(call say,building $(EXT_TARGET) [$(CONFIG)] unsigned)
-	@$(XCB) -target $(EXT_TARGET) $(QUIET) $(UNSIGNED_FLAGS) build
+build-ext: require-xcode require-sign #= Compile only the system extension (SIGN as above)
+	@$(call say,building $(EXT_TARGET) [$(CONFIG)] sign=$(SIGN))
+	@$(XCB) -target $(EXT_TARGET) $(QUIET) $(SIGN_FLAGS) build
 
-build-signed: require-xcode require-team #= Signed build (TEAM=<id>); needed for the extension to load
+build-signed: require-xcode require-team #= Build signed with YOUR Team ID (TEAM=<id>); same as SIGN=team
 	@$(call say,building $(APP_TARGET) [$(CONFIG)] signed with team $(TEAM))
 	@$(XCB) -target $(APP_TARGET) $(QUIET) $(SIGNED_FLAGS) build
 	@$(call say,build ok: $(APP_PATH))
@@ -190,19 +206,31 @@ build-signed: require-xcode require-team #= Signed build (TEAM=<id>); needed for
 lint: #= Run swiftlint if installed (skips with a note otherwise)
 	@if command -v swiftlint >/dev/null; then swiftlint lint --quiet; else echo "swiftlint not installed - skipping (brew install swiftlint)"; fi
 
-check: #= Whitespace check + lint + build (run before pushing)
+check: #= Signing check + whitespace check + lint + build (run before pushing)
+	@$(MAKE) --no-print-directory check-signing
 	@git diff --check
 	@$(MAKE) --no-print-directory lint
 	@$(MAKE) --no-print-directory build
 
-test: require-xcode #= Run Xcode tests (set TEST_SCHEME=<scheme>; the repo has no tests yet)
+test: require-xcode require-sign #= Run Xcode tests (set TEST_SCHEME=<scheme>; the repo has no tests yet)
 	@if [ -n "$(TEST_SCHEME)" ]; then \
 	  $(call say,testing scheme $(TEST_SCHEME)); \
-	  $(XCB) -scheme "$(TEST_SCHEME)" $(QUIET) $(UNSIGNED_FLAGS) test; \
+	  $(XCB) -scheme "$(TEST_SCHEME)" $(QUIET) $(SIGN_FLAGS) test; \
 	else \
 	  echo "No test scheme set: the repo has no unit tests yet (plan phase P1)."; \
 	  echo "Add a test target, then run: make test TEST_SCHEME=<scheme>"; \
 	fi
+
+check-signing: #= Fail if the Xcode project has a Team ID, certificate or profile (local ad-hoc signing only)
+	@sh scripts/check-signing.sh
+
+install-hooks: #= Install a git pre-commit hook that runs check-signing (FORCE=1 to overwrite)
+	@hook=.git/hooks/pre-commit; \
+	[ -d .git/hooks ] || { echo "ERROR: not a git checkout (.git/hooks missing)" >&2; exit 66; }; \
+	if [ -e "$$hook" ] && [ "$$FORCE" != 1 ]; then echo "ERROR: $$hook exists (use FORCE=1 to overwrite)" >&2; exit 65; fi; \
+	printf '%s\n' '#!/bin/sh' '#= pre-commit hook installed by make install-hooks (fsCrescendo): blocks commits with non-local signing' 'root=$$(git rev-parse --show-toplevel) || exit 1' 'exec sh "$$root/scripts/check-signing.sh" --quiet' > "$$hook"; \
+	chmod +x "$$hook"; \
+	$(call say,installed $$hook)
 
 #= ---------------------------------------------------------------------------
 #= Install, run, debug
@@ -275,4 +303,4 @@ clean: require-safe-builddir #= Remove build products (./build)
 	@rm -rf "$(BUILD_DIR)"
 
 distclean: clean #= Preview ignored files git would delete; CONFIRM=1 actually deletes them
-	@if [ "$(CONFIRM)" = 1 ]; then git clean -fdX; else echo "Dry run (add CONFIRM=1 to delete):"; git clean -ndX; fi
+	@if [ "$$CONFIRM" = 1 ]; then git clean -fdX; else echo "Dry run (add CONFIRM=1 to delete):"; git clean -ndX; fi
