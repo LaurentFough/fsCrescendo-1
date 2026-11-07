@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.1.0  (2026-11-07)
+#= Makefile  -- version 1.2.0  (2026-11-07)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.1.0
+MAKEFILE_VERSION := 1.2.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -49,7 +49,12 @@ else
 QUIET := -quiet
 endif
 
-XCB            := xcodebuild -project $(PROJECT) -configuration $(CONFIG) SYMROOT=$(SYMROOT) OBJROOT=$(OBJROOT)
+XCODE_DETECT   ?= scripts/xcode-detect.sh
+#= XCODE_DIR runs the detector once per make run, only when an Xcode target needs it (lazy + memoised).
+#= It finds an installed Xcode even when xcode-select points at the Command Line Tools, so no sudo is needed.
+#= (Assumes the Xcode path has no spaces.)
+XCODE_DIR       = $(eval XCODE_DIR := $(shell sh $(XCODE_DETECT) --dir 2>/dev/null))$(XCODE_DIR)
+XCB             = $(if $(XCODE_DIR),DEVELOPER_DIR="$(XCODE_DIR)" )xcodebuild -project $(PROJECT) -configuration $(CONFIG) SYMROOT=$(SYMROOT) OBJROOT=$(OBJROOT)
 UNSIGNED_FLAGS := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=
 SIGNED_FLAGS   := CODE_SIGN_STYLE=Automatic $(if $(TEAM),DEVELOPMENT_TEAM=$(TEAM)) -allowProvisioningUpdates
 
@@ -87,7 +92,8 @@ help: #= Show this help
 	@echo "Variables (current): CONFIG=$(CONFIG) BUILD_DIR=$(BUILD_DIR) TEAM=$(TEAM) NAMES='$(NAMES)' LAST=$(LAST) V=$(V)"
 	@echo "Examples:"
 	@echo "  make doctor                       # what is installed / enabled"
-	@echo "  make build                        # unsigned compile check"
+	@echo "  make build                        # Xcode if usable, else Command Line Tools compile check"
+	@echo "  make build DEVELOPER_DIR=/path/Xcode.app/Contents/Developer   # pick an Xcode without sudo"
 	@echo "  make build-signed TEAM=ABCDE12345 # signed build (needs your ES entitlement)"
 	@echo "  make logs-sandbox NAMES='the-binary ioreg'"
 
@@ -98,7 +104,7 @@ version: #= Print Makefile and git versions
 doctor: #= Environment report: OS, Xcode, tools, SIP/AMFI, repo state
 	@echo "== host";  uname -sm; if command -v sw_vers >/dev/null; then sw_vers; else echo "  (not macOS: build targets unavailable)"; fi
 	@echo "== tools"; for t in xcodebuild swiftc xcrun swiftlint git codesign systemextensionsctl eslogger log; do printf '  %-22s' $$t; command -v $$t || echo "-"; done
-	@echo "== xcode"; if command -v xcode-select >/dev/null; then echo "  developer dir: $$(xcode-select -p 2>/dev/null)"; fi; if command -v xcodebuild >/dev/null && xcodebuild -version >/dev/null 2>&1; then xcodebuild -version; echo "  make build -> full Xcode"; else echo "  full Xcode not usable; make build -> Command Line Tools (compile check only)"; fi
+	@echo "== xcode"; sh $(XCODE_DETECT) --human; if sh $(XCODE_DETECT) --dir >/dev/null 2>&1; then echo "  make build -> full Xcode"; else echo "  make build -> Command Line Tools (compile check only)"; fi
 	@echo "== sip / amfi (only a dev VM needs these relaxed; see README)"; if command -v csrutil >/dev/null; then csrutil status; else echo "  csrutil n/a"; fi; if command -v nvram >/dev/null; then nvram boot-args 2>/dev/null || echo "  boot-args: (none)"; fi
 	@echo "== repo"; git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "  not a git checkout"; if [ -d "$(PROJECT)" ]; then echo "  project: $(PROJECT) ok"; else echo "  project: $(PROJECT) MISSING (run from the repo root)"; fi
 
@@ -110,6 +116,7 @@ selftest: #= Sanity-check this Makefile with dry runs (works on any OS)
 	@for t in build build-xcode build-clt build-lib build-ext build-signed install run logs logs-sandbox logs-replay crashes sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign clean; do \
 	  $(MAKE) --no-print-directory -n $$t TEAM=ABCDE12345 >/dev/null 2>&1 || { echo "selftest FAIL: $$t" >&2; exit 1; }; \
 	done
+	@sh $(XCODE_DETECT) --env >/dev/null || { echo "selftest FAIL: $(XCODE_DETECT)" >&2; exit 1; }
 	@$(call say,selftest ok)
 
 #= ---------------------------------------------------------------------------
@@ -119,7 +126,7 @@ require-macos:
 	@[ "$$(uname -s)" = Darwin ] || { echo "ERROR: this target needs macOS" >&2; exit 2; }
 
 require-xcode: require-macos
-	@command -v xcodebuild >/dev/null || { echo "ERROR: xcodebuild not found (install Xcode or run xcode-select --install)" >&2; exit 2; }
+	@sh $(XCODE_DETECT) --dir >/dev/null 2>&1 || { echo "ERROR: no usable Xcode for xcodebuild" >&2; sh $(XCODE_DETECT) --why >&2; exit 2; }
 	@[ -d "$(PROJECT)" ] || { echo "ERROR: $(PROJECT) not found (run make from the repo root)" >&2; exit 66; }
 	@case "$(CURDIR)" in *" "*) echo "ERROR: repo path contains a space; unsupported by this Makefile: $(CURDIR)" >&2; exit 65;; esac
 
@@ -142,10 +149,11 @@ require-safe-builddir:
 build: require-macos #= Build: full Xcode if usable, else Command Line Tools compile check (BUILD_MODE=auto|xcode|clt)
 	@mode="$$BUILD_MODE"; \
 	if [ "$$mode" = auto ]; then \
-	  if command -v xcodebuild >/dev/null && xcodebuild -version >/dev/null 2>&1; then mode=xcode; else mode=clt; fi; \
+	  if sh $(XCODE_DETECT) --dir >/dev/null 2>&1; then mode=xcode; else mode=clt; fi; \
 	fi; \
 	case "$$mode" in xcode|clt) ;; *) echo "ERROR: BUILD_MODE must be auto, xcode or clt (got: $$mode)" >&2; exit 64;; esac; \
 	$(call say,build mode: $$mode); \
+	if [ "$$mode" = clt ]; then sh $(XCODE_DETECT) --why >&2 || true; fi; \
 	exec $(MAKE) --no-print-directory build-$$mode
 
 build-xcode: require-xcode #= Full Xcode build of app + extension + framework, UNSIGNED (no signing)
