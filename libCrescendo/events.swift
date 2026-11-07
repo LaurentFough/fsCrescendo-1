@@ -6,7 +6,8 @@ extension ESClient {
     func parseForkEvent(msg: UnsafePointer<es_message_t>, cEvent: inout CrescendoEvent) {
         let forkedProc: es_event_fork_t = msg.pointee.event.fork
         let proc = forkedProc.child.pointee
-        cEvent.props = getProcessProps(proc: proc, exec: msg.pointee.event.exec)
+        //= fork messages carry no exec payload: do not pass event.exec here (COR-01).
+        cEvent.props = getProcessProps(proc: proc)
         callback(cEvent)
     }
 
@@ -67,9 +68,25 @@ extension ESClient {
     func parseFileEvent(msg: UnsafePointer<es_message_t>, cEvent: inout CrescendoEvent) {
         var fileEvent: Dictionary = [String: String]()
 
-        let file: es_file_t = msg.pointee.event.create.destination.new_path.dir.pointee
-        fileEvent["path"] = getString(tok: file.path)
-        fileEvent["size"] = String(file.stat.st_size)
+        //= The destination is a union selected by destination_type (COR-03):
+        //=   existing_file: the file that was created/opened already exists as a vnode
+        //=   new_path:      parent dir + filename (+ mode); the full path is dir/filename
+        let create = msg.pointee.event.create
+        switch create.destination_type {
+        case ES_DESTINATION_TYPE_EXISTING_FILE:
+            let file: es_file_t = create.destination.existing_file.pointee
+            fileEvent["path"] = getString(tok: file.path)
+            fileEvent["size"] = String(file.stat.st_size)
+        case ES_DESTINATION_TYPE_NEW_PATH:
+            let dir: es_file_t = create.destination.new_path.dir.pointee
+            let dirPath = getString(tok: dir.path)
+            let name = getString(tok: create.destination.new_path.filename)
+            fileEvent["dir"] = dirPath
+            fileEvent["filename"] = name
+            fileEvent["path"] = joinPath(dir: dirPath, name: name)
+        default:
+            fileEvent["path"] = "<unknown destination type>"
+        }
 
         cEvent.props = fileEvent
 
@@ -79,15 +96,30 @@ extension ESClient {
     func parseRenameEvent(msg: UnsafePointer<es_message_t>, cEvent: inout CrescendoEvent) {
         var fileEvent: Dictionary = [String: String]()
 
-        let file: es_file_t = msg.pointee.event.rename.source.pointee
+        let rename = msg.pointee.event.rename
+        let file: es_file_t = rename.source.pointee
         fileEvent["srcpath"] = getString(tok: file.path)
         fileEvent["srcsize"] = String(file.stat.st_size)
 
-        fileEvent["desttype"] = String(msg.pointee.event.rename.destination_type.rawValue)
-        fileEvent["destfile"] = getString(tok: msg.pointee.event.rename.destination.new_path.filename)
-
-        let dstfile: es_file_t = msg.pointee.event.rename.destination.existing_file.pointee
-        fileEvent["destdir"] = getString(tok: dstfile.path)
+        //= The destination is a union selected by destination_type (COR-03). Reading the wrong
+        //= member mislabelled the result, so check the type first.
+        switch rename.destination_type {
+        case ES_DESTINATION_TYPE_EXISTING_FILE:
+            //= renaming over an existing file: its path is the destination
+            let dst: es_file_t = rename.destination.existing_file.pointee
+            fileEvent["desttype"] = "existing_file"
+            fileEvent["destpath"] = getString(tok: dst.path)
+        case ES_DESTINATION_TYPE_NEW_PATH:
+            let dir: es_file_t = rename.destination.new_path.dir.pointee
+            let dirPath = getString(tok: dir.path)
+            let name = getString(tok: rename.destination.new_path.filename)
+            fileEvent["desttype"] = "new_path"
+            fileEvent["destdir"] = dirPath
+            fileEvent["destfile"] = name
+            fileEvent["destpath"] = joinPath(dir: dirPath, name: name)
+        default:
+            fileEvent["desttype"] = "unknown"
+        }
 
         cEvent.props = fileEvent
 
@@ -106,13 +138,11 @@ extension ESClient {
     func parseMountEvent(msg: UnsafePointer<es_message_t>, cEvent: inout CrescendoEvent) {
         var mountEvent: Dictionary = [String: String]()
 
-        let remoteBytes = msg.pointee.event.mount.statfs.pointee.f_mntonname
-        let remoteName = String(tupleOfCChars: remoteBytes)
-        mountEvent["remotename"] = remoteName
-
-        let localBytes = msg.pointee.event.mount.statfs.pointee.f_mntonname
-        let localName = String(tupleOfCChars: localBytes)
-        mountEvent["localname"] = localName
+        //= f_mntfromname is the source (device/remote share), f_mntonname the mount point.
+        //= Both fields previously read f_mntonname, so remotename was wrong (COR-02).
+        let fsInfo = msg.pointee.event.mount.statfs.pointee
+        mountEvent["remotename"] = String(tupleOfCChars: fsInfo.f_mntfromname)
+        mountEvent["localname"] = String(tupleOfCChars: fsInfo.f_mntonname)
 
         cEvent.props = mountEvent
 
@@ -135,7 +165,8 @@ extension ESClient {
 
     func parseProcExitEvent(msg: UnsafePointer<es_message_t>, cEvent: inout CrescendoEvent) {
         let proc: es_process_t = msg.pointee.process.pointee
-        cEvent.props = getProcessProps(proc: proc, exec: msg.pointee.event.exec)
+        //= exit messages carry no exec payload: do not pass event.exec here (COR-01).
+        cEvent.props = getProcessProps(proc: proc)
         callback(cEvent)
     }
 
