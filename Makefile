@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.8.0  (2026-11-08)
+#= Makefile  -- version 1.9.0  (2026-11-08)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.8.0
+MAKEFILE_VERSION := 1.9.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -35,6 +35,9 @@ SIGN        ?= local
 APP_ENT     ?= Crescendo/CrescendoApp.entitlements
 EXT_ENT     ?= CrescendoExtension/CrescendoExtension.entitlements
 FORCE       ?= 0
+ESD_SRC     ?= daemon/crescendo-esd.swift
+ESD_BIN     := $(CURDIR)/$(BUILD_DIR)/esd/crescendo-esd
+SIGN_IDENTITY ?= -
 LITE_ENT    ?= Crescendo/CrescendoLite.entitlements
 LITE_APP    := $(CURDIR)/$(BUILD_DIR)/lite/$(APP_TARGET).app
 MIN_MACOS   ?= 13.0
@@ -90,7 +93,7 @@ printf '%s make[$(MAKEFILE_VERSION)]: %s\n' "$$(date '+%Y-%m-%dT%H:%M:%S')" "$(1
 endef
 
 .PHONY: help version doctor list selftest \
-        build build-lite build-xcode build-clt build-lib build-ext build-signed lint check test \
+        build build-lite esd-build esd-install esd-remove esd-status esd-log build-xcode build-clt build-lib build-ext build-signed lint check test \
         install run logs logs-sandbox logs-replay crashes \
         sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign eslogger \
         clean distclean \
@@ -190,6 +193,24 @@ build-lite: require-xcode #= Build the LITE app (no Endpoint Security extension,
 	@sh scripts/lite-package.sh "$(APP_PATH)" "$(LITE_APP)" "$(LITE_ENT)" tools/cresc
 	@$(call say,lite build ok: $(LITE_APP))
 	@$(call say,run it with: open "$(LITE_APP)")
+
+esd-build: require-macos #= Compile the event daemon (crescendo-esd) with swiftc (Command Line Tools are enough)
+	@mkdir -p "$(dir $(ESD_BIN))"
+	@$(call say,compiling $(ESD_SRC))
+	@$(SWIFTC) -O -swift-version 5 -module-name crescendo_esd -sdk "$(SDK_PATH)" -target $(ARCH)-apple-macosx$(MIN_MACOS) -o "$(ESD_BIN)" $(ESD_SRC)
+	@$(call say,built $(ESD_BIN))
+
+esd-install: esd-build #= Install and load the event daemon as a root LaunchDaemon (sudo once; SIGN_IDENTITY=<name> keeps the FDA grant across rebuilds)
+	@sudo sh scripts/esd-install.sh install --uid "$$(id -u)" --binary "$(ESD_BIN)" --sign-identity "$(SIGN_IDENTITY)"
+
+esd-remove: #= Unload and delete the event daemon (sudo)
+	@sudo sh scripts/esd-install.sh remove
+
+esd-status: #= Ask the running daemon for its state (JSON)
+	@PYTHONPATH=tools/cresc $(PYTHON) -c 'import json; from cresc import esd; print(json.dumps(esd.status(), indent=2))' || { echo "daemon not reachable: make esd-install (then grant Full Disk Access)" >&2; exit 1; }
+
+esd-log: #= Show the daemon log (/var/log/crescendo-esd.log)
+	@tail -n 40 /var/log/crescendo-esd.log
 
 build-clt: require-clt #= Command Line Tools compile check ONLY: no .app, no storyboards, no signing
 	@$(call say,Command Line Tools mode: compile check only - no .app is produced)

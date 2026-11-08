@@ -58,7 +58,8 @@ started as `python3 -m cresc serve`; override with `CRESC_PYTHON` / `CRESC_ENGIN
 - **Sessions**: profile, program, write dirs (`:`-separated), arguments; Start / Stop / Restart.
 - **Denials**: candidates from the last run with their generated rules; Grant selected, Grant all low-risk,
   Grant selected & restart (high-risk rules ask for confirmation first).
-- **Events**: pick a scope (all / app / dir / file / pid), optionally a kinds filter, press **Start**. The app asks the
+- **Events** (preferred: event daemon, see `docs/event-daemon.md`; `make esd-install` once, then Start / Stop / Pause need no
+  Terminal or password; Pause really stops eslogger). Without the daemon: pick a scope (all / app / dir / file / pid), optionally a kinds filter, press **Start**. The app asks the
   engine to read a private FIFO (`~/Library/Application Support/Crescendo/es/events.fifo`, 0600) and opens a Terminal
   window running `sudo eslogger ... > fifo` (generated `run-eslogger.command`, 0700); type your sudo password there.
   **Stop** closes the FIFO and eslogger exits on its next write. Terminal needs Full Disk Access; the app needs no

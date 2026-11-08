@@ -19,7 +19,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
-from . import SCHEMAS, __version__
+from . import SCHEMAS, __version__, esd
 from .classify import path_entries
 from .cli import CliError, apply_grants, manual_item, select_for_grant
 from .denials import fold, parse_lines
@@ -174,7 +174,7 @@ class Server:
             "triage.run": self.m_triage_run, "triage.lines": self.m_triage_lines,
             "run.start": self.m_run_start, "run.stop": self.m_run_stop, "run.list": self.m_run_list,
             "run.get": self.m_run_get, "run.output": self.m_run_output, "run.compare": self.m_run_compare,
-            "watch.start": self.m_watch_start, "watch.stop": self.m_watch_stop, "watch.stats": self.m_watch_stats,
+            "esd.status": self.m_esd_status, "watch.start": self.m_watch_start, "watch.stop": self.m_watch_stop, "watch.stats": self.m_watch_stats,
         }
 
     #= ---- output ------------------------------------------------------------------------------------------
@@ -456,13 +456,40 @@ class Server:
         return dict(compare_groups(a.groups, b.groups), a=a.meta, b=b.meta)
 
     #= ---- methods: watches --------------------------------------------------------------------------------
+    def m_esd_status(self, p: Dict) -> Dict:
+        """State of the event daemon; an unreachable daemon is a normal answer (available=false), not an error."""
+        path = p.get("socket", esd.DEFAULT_SOCKET)
+        if not isinstance(path, str) or not os.path.isabs(path):
+            raise ApiError("invalid_params", "socket must be an absolute path")
+        try:
+            info = esd.status(path)
+        except esd.EsdError as exc:
+            return {"available": False, "socket": path, "reason": str(exc)}
+        info.pop("esd", None)
+        return dict(info, available=True, socket=path)
+
     def m_watch_start(self, p: Dict) -> Dict:
         source = p.get("source")
-        if not isinstance(source, dict) or not isinstance(source.get("file"), str):
-            raise ApiError("invalid_params", "source must be {\"file\": \"/path/to/eslogger.jsonl or a FIFO\"}")
-        path = source["file"]
-        if not os.path.isabs(path) or not os.path.exists(path):
-            raise ApiError("invalid_params", "source.file must be an existing absolute path")
+        if not isinstance(source, dict):
+            raise ApiError("invalid_params", "source must be {\"file\": ...} or {\"socket\": ..., \"events\": [...]}")
+        sock_path = None
+        sock_events: List[str] = list(esd.DEFAULT_EVENTS)
+        if "socket" in source:
+            sock_path = source["socket"] if isinstance(source["socket"], str) else ""
+            if not os.path.isabs(sock_path):
+                raise ApiError("invalid_params", "source.socket must be an absolute path")
+            try:
+                sock_events = esd.check_events(source.get("events", sock_events))
+                esd.status(sock_path)                    #= fail now, not later in the background thread
+            except esd.EsdError as exc:
+                raise ApiError("session_error", str(exc))
+            path = sock_path
+        else:
+            if not isinstance(source.get("file"), str):
+                raise ApiError("invalid_params", "source must be {\"file\": \"/path/to/eslogger.jsonl or a FIFO\"}")
+            path = source["file"]
+            if not os.path.isabs(path) or not os.path.exists(path):
+                raise ApiError("invalid_params", "source.file must be an existing absolute path")
         follow = bool(source.get("follow", False))
         scopes = []
         raw = p.get("scopes", [])
@@ -501,7 +528,8 @@ class Server:
 
         def worker() -> None:
             try:
-                run_watch(line_source(path, handle.stop, follow), flt, emit, handle.stats)
+                run_watch(esd.socket_lines(path, sock_events, handle.stop) if sock_path
+                          else line_source(path, handle.stop, follow), flt, emit, handle.stats)
                 if handle.watcher and not handle.stop.is_set():
                     handle.stop.wait(settle)
             except Exception as exc:

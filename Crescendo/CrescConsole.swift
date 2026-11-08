@@ -162,6 +162,7 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
             switch result {
             case let .success(info):
                 self?.statusLabel.stringValue = "engine: ready (protocol \(info["protocol"] ?? "?"), cresc \(info["cresc"] ?? "?"))"
+                self?.events.refreshDaemon()
             case let .failure(err):
                 self?.statusLabel.stringValue = "engine: \(err.message)"
             }

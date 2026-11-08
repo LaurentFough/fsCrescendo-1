@@ -5,6 +5,8 @@ import Cocoa
 //= (`watch.start`), and shows the one-line command that YOU run in a terminal to feed it:
 //=     sudo eslogger <events> > <fifo>
 //= (eslogger needs root, plus Full Disk Access for the terminal app). No Endpoint Security entitlement is used.
+//= Preferred source: the Crescendo event daemon (make esd-install), a root LaunchDaemon that runs eslogger on request:
+//= Start/Stop/Pause just talk to it over a socket, no Terminal and no password. Fallback when it is not installed:
 //= One button does it all: Start asks the engine to read the FIFO and opens a Terminal window that runs the command
 //= (a generated 0700 .command file; you type your sudo password there). Stop closes the FIFO, and eslogger
 //= exits by itself on its next write (SIGPIPE).
@@ -30,6 +32,10 @@ final class EventsPane: NSObject, NSTableViewDataSource {
     private let pauseCheck = NSButton(checkboxWithTitle: "Pause", target: nil, action: nil)
     private let scrollCheck = NSButton(checkboxWithTitle: "Autoscroll", target: nil, action: nil)
     private let statsLabel = NSTextField(labelWithString: "not watching")
+    private let daemonLabel = NSTextField(labelWithString: "daemon: checking...")
+    private var usingDaemon = false
+    private var pausedByUser = false
+    static let daemonSocket = "/var/run/com.loff.crescendo.esd.sock"
     private let table = NSTableView()
     private let scroll = NSScrollView()
     private let columns: [(id: String, title: String, width: CGFloat)] = [
@@ -105,7 +111,9 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         searchField.target = self
         searchField.action = #selector(filterChanged)
         scrollCheck.state = .on
-        let filterRow = NSStackView(views: [searchField, pauseCheck, scrollCheck, statsLabel])
+        pauseCheck.target = self
+        pauseCheck.action = #selector(pauseToggled)
+        let filterRow = NSStackView(views: [searchField, pauseCheck, scrollCheck, daemonLabel, statsLabel])
         searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 240).isActive = true
 
         for col in columns {
@@ -129,10 +137,35 @@ final class EventsPane: NSObject, NSTableViewDataSource {
     }
 
     //= ---- watch control -------------------------------------------------------------------------------------
+    //= asks the engine whether the daemon answers; updates the label and (optionally) continues
+    func refreshDaemon(then next: ((Bool) -> Void)? = nil) {
+        call?("esd.status", ["socket": EventsPane.daemonSocket]) { [weak self] result in
+            var available = false
+            switch result {
+            case let .success(info):
+                available = info["available"] as? Bool ?? false
+                let state = info["state"] as? String ?? "?"
+                self?.daemonLabel.stringValue = available ? "daemon: \(state)" : "daemon: not installed (make esd-install)"
+            case .failure:
+                self?.daemonLabel.stringValue = "daemon: engine not ready"
+            }
+            next?(available)
+        }
+    }
+
     @objc private func startWatch() {
         guard watchId == nil else { log?("already watching"); return }
-        if let problem = prepareFifo() { log?("ERROR: \(problem)"); return }
-        var params: [String: Any] = ["source": ["file": EventsPane.fifoPath(), "follow": false]]
+        refreshDaemon { [weak self] available in self?.beginWatch(useDaemon: available) }
+    }
+
+    private func beginWatch(useDaemon: Bool) {
+        var params: [String: Any]
+        if useDaemon {
+            params = ["source": ["socket": EventsPane.daemonSocket, "events": EventsPane.eventNames.split(separator: " ").map { String($0) }]]
+        } else {
+            if let problem = prepareFifo() { log?("ERROR: \(problem)"); return }
+            params = ["source": ["file": EventsPane.fifoPath(), "follow": false]]
+        }
         let kinds = kindsField.stringValue.split(separator: " ").map { String($0) }
         if !kinds.isEmpty { params["kinds"] = kinds }
         let title = scopePopup.titleOfSelectedItem ?? ""
@@ -146,8 +179,14 @@ final class EventsPane: NSObject, NSTableViewDataSource {
             switch result {
             case let .success(info):
                 self?.watchId = info["watch_id"] as? String
-                self?.statsLabel.stringValue = "watching - enter your password in the Terminal window"
-                self?.launchTerminal()
+                self?.usingDaemon = useDaemon
+                if useDaemon {
+                    self?.statsLabel.stringValue = "watching via the event daemon"
+                } else {
+                    self?.statsLabel.stringValue = "watching - enter your password in the Terminal window"
+                    self?.launchTerminal()
+                }
+                self?.refreshDaemon()
             case let .failure(err):
                 self?.log?("watch.start failed: \(err.code): \(err.message)")
             }
@@ -155,8 +194,27 @@ final class EventsPane: NSObject, NSTableViewDataSource {
     }
 
     @objc private func stopWatch() {
+        pausedByUser = false
+        pauseCheck.state = .off
+        endWatch()
+    }
+
+    private func endWatch() {
         guard let id = watchId else { return }
         call?("watch.stop", ["watch_id": id], nil)
+    }
+
+    //= With the daemon, Pause really stops eslogger (no CPU, nothing queued) and un-pausing starts it again with the
+    //= same scope. Without it, Pause only freezes the table.
+    @objc private func pauseToggled() {
+        guard usingDaemon else { return }
+        if pauseCheck.state == .on {
+            pausedByUser = true
+            endWatch()
+        } else if pausedByUser {
+            pausedByUser = false
+            startWatch()
+        }
     }
 
     @objc private func clearRows() {
@@ -176,8 +234,9 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         case "watch.ended":
             guard data["watch_id"] as? String == watchId else { return }
             watchId = nil
+            refreshDaemon()
             let stats = data["stats"] as? [String: Any] ?? [:]
-            statsLabel.stringValue = "ended: read \(stats["read"] ?? 0), shown \(stats["shown"] ?? 0), dropped \(stats["dropped"] ?? 0)"
+            statsLabel.stringValue = (pausedByUser ? "paused (eslogger stopped): " : "ended: ") + "read \(stats["read"] ?? 0), shown \(stats["shown"] ?? 0), dropped \(stats["dropped"] ?? 0)"
         case "watch.error":
             log?("watch error: \(data["message"] ?? "")")
         default:
