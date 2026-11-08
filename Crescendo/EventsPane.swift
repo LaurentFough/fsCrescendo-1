@@ -5,6 +5,9 @@ import Cocoa
 //= (`watch.start`), and shows the one-line command that YOU run in a terminal to feed it:
 //=     sudo eslogger <events> > <fifo>
 //= (eslogger needs root, plus Full Disk Access for the terminal app). No Endpoint Security entitlement is used.
+//= One button does it all: Start asks the engine to read the FIFO and opens a Terminal window that runs the command
+//= (a generated 0700 .command file; you type your sudo password there). Stop closes the FIFO, and eslogger
+//= exits by itself on its next write (SIGPIPE).
 //= Scope = all / app / dir / file / pid; the engine filters (following child processes) and pushes `watch.event`.
 
 final class EventsPane: NSObject, NSTableViewDataSource {
@@ -20,7 +23,6 @@ final class EventsPane: NSObject, NSTableViewDataSource {
     private var visible = [[String: String]]()
     private var reloadPending = false
 
-    private let commandField = NSTextField(string: "")
     private let scopePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let scopeValue = NSTextField(string: "")
     private let kindsField = NSTextField(string: "")
@@ -65,27 +67,37 @@ final class EventsPane: NSObject, NSTableViewDataSource {
 
     private func shellQuote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
-    private func refreshCommand() {
-        commandField.stringValue = "sudo eslogger \(EventsPane.eventNames) > \(shellQuote(EventsPane.fifoPath()))"
+    private func esCommand() -> String {
+        "sudo eslogger \(EventsPane.eventNames) > \(shellQuote(EventsPane.fifoPath()))"
+    }
+
+    //= writes the launcher next to the FIFO and opens it (Terminal handles .command files)
+    private func launchTerminal() {
+        let path = (EventsPane.fifoPath() as NSString).deletingLastPathComponent + "/run-eslogger.command"
+        let script = "#!/bin/sh\n"
+            + "echo 'Crescendo event source: eslogger (needs your sudo password). Close this window or press Ctrl-C to stop.'\n"
+            + "exec \(esCommand())\n"
+        do {
+            try script.write(toFile: path, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
+        } catch {
+            log?("ERROR: cannot write \(path): \(error.localizedDescription)")
+            return
+        }
+        if !NSWorkspace.shared.open(URL(fileURLWithPath: path)) {
+            log?("could not open Terminal; run this yourself: \(esCommand())")
+        }
     }
 
     //= ---- UI ------------------------------------------------------------------------------------------------
     private func build() {
-        commandField.isEditable = false
-        commandField.isSelectable = true
-        commandField.font = NSFont.userFixedPitchFont(ofSize: 11)
-        refreshCommand()
-        let copy = NSButton(title: "Copy command", target: self, action: #selector(copyCommand))
-        let commandRow = NSStackView(views: [NSTextField(labelWithString: "1. In Terminal:"), commandField, copy])
-        commandField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-
         scopePopup.addItems(withTitles: ["all events", "app", "dir", "file", "pid"])
         scopeValue.placeholderString = "app name or path / absolute path / pid"
         kindsField.placeholderString = "kinds, e.g. file.* proc.exec (empty = all)"
-        let start = NSButton(title: "Start watching", target: self, action: #selector(startWatch))
+        let start = NSButton(title: "Start", target: self, action: #selector(startWatch))
         let stop = NSButton(title: "Stop", target: self, action: #selector(stopWatch))
         let clear = NSButton(title: "Clear", target: self, action: #selector(clearRows))
-        let controlRow = NSStackView(views: [NSTextField(labelWithString: "2. Scope:"), scopePopup, scopeValue, kindsField, start, stop, clear])
+        let controlRow = NSStackView(views: [NSTextField(labelWithString: "Scope:"), scopePopup, scopeValue, kindsField, start, stop, clear])
         scopeValue.setContentHuggingPriority(.defaultLow, for: .horizontal)
         kindsField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
@@ -110,16 +122,10 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         view.alignment = .leading
         view.spacing = 8
         view.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-        for row in [commandRow, controlRow, filterRow, scroll] {
+        for row in [controlRow, filterRow, scroll] {
             view.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -24).isActive = true
         }
-    }
-
-    @objc private func copyCommand() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(commandField.stringValue, forType: .string)
-        log?("event-source command copied; paste it in Terminal (Terminal needs Full Disk Access)")
     }
 
     //= ---- watch control -------------------------------------------------------------------------------------
@@ -140,7 +146,8 @@ final class EventsPane: NSObject, NSTableViewDataSource {
             switch result {
             case let .success(info):
                 self?.watchId = info["watch_id"] as? String
-                self?.statsLabel.stringValue = "watching (run the Terminal command to feed events)"
+                self?.statsLabel.stringValue = "watching - enter your password in the Terminal window"
+                self?.launchTerminal()
             case let .failure(err):
                 self?.log?("watch.start failed: \(err.code): \(err.message)")
             }

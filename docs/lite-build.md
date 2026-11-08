@@ -58,8 +58,8 @@ started as `python3 -m cresc serve`; override with `CRESC_PYTHON` / `CRESC_ENGIN
 - **Sessions**: profile, program, write dirs (`:`-separated), arguments; Start / Stop / Restart.
 - **Denials**: candidates from the last run with their generated rules; Grant selected, Grant all low-risk,
   Grant selected & restart (high-risk rules ask for confirmation first).
-- **Events** (step 1b): the app creates a private FIFO (`~/Library/Application Support/Crescendo/es/events.fifo`, 0600)
-  and shows the command to run in Terminal: `sudo eslogger exec fork ... > '<fifo>'` (Copy command button).
-  Pick a scope (all / app / dir / file / pid), press **Start watching**, then run the command. Rows are filtered by the
-  engine (children and responsible processes are followed); 5000 rows are kept, with search, pause and autoscroll.
-  Terminal needs Full Disk Access; the app itself needs no privileges or entitlements.
+- **Events**: pick a scope (all / app / dir / file / pid), optionally a kinds filter, press **Start**. The app asks the
+  engine to read a private FIFO (`~/Library/Application Support/Crescendo/es/events.fifo`, 0600) and opens a Terminal
+  window running `sudo eslogger ... > fifo` (generated `run-eslogger.command`, 0700); type your sudo password there.
+  **Stop** closes the FIFO and eslogger exits on its next write. Terminal needs Full Disk Access; the app needs no
+  privileges or entitlements. 5000 rows are kept, with search, pause and autoscroll.
