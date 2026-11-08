@@ -56,6 +56,8 @@ Non-interactive pieces (what a GUI calls):
 | `cresc runs NAME`, `cresc compare NAME A B` | run history and what a profile change resolved |
 | `cresc output NAME [--run N] [--bytes B] [--json]` | the run's arguments, exit status, stdout and stderr (control characters escaped) |
 | `cresc loop NAME ...` | interactive run / grant / restart |
+| `cresc export NAME [--run N] [-o FILE.zip] [--events FILE] [--no-redact]` | evidence bundle of one run: record, output, denials, analysis, profile, SHA-256 manifest (`cresc.bundle/1`) |
+| `cresc verify-bundle FILE.zip` | check a bundle against its manifest (exit 1 on any difference) |
 | `cresc serve` | JSON-lines interface on stdin/stdout for a GUI, see [PROTOCOL.md](PROTOCOL.md) |
 | `cresc watch [FILE|-] [--app/--dir/--file/--pid ...]` | live or replayed event view from `eslogger` JSON (`--json`: `cresc.event/1`) |
 

@@ -72,6 +72,16 @@ started as `python3 -m cresc serve`; override with `CRESC_PYTHON` / `CRESC_ENGIN
 - **Denials**: run picker (new runs appear automatically), `Candidates | All` filter, search, a Change column
   (new / persisting vs the previous run; resolved ones are counted in the summary), a detail box (why it was classified,
   the rule, notes), and the buttons Grant selected, Grant selected & restart, Grant all low-risk, Grant up to medium,
-  Add rule by hand.
+  Add rule by hand, **Export evidence...** and **Verify bundle...** (see below).
 - **Profile**: history of every change, the sandbox text of the selected version, Diff with previous, Revoke selected grant.
 - **Events**: see above; kinds are rows; the scope has a picker.
+
+## Evidence bundle (investigation proof)
+Denials tab > **Export evidence...** writes one zip for the shown run (CLI: `python3 -m cresc export NAME --run N -o out.zip`):
+`run/` (record, program output escaped, denials as logged), `analysis/` (triage JSON, CSV, comparison with the previous
+run), `profile/` (the exact sandbox profile used, grants and history, the diff that led to it), optional `events/`
+(an eslogger capture via `--events FILE`), a PKIM-ready `README.md`, and `manifest.json` with the SHA-256 of every file.
+- **Verify** with **Verify bundle...** or `python3 -m cresc verify-bundle out.zip`: reports changed, missing and extra files.
+- The manifest is inside the zip, so this is tamper-*evident*. For proof, store the zip's own SHA-256 (logged on export)
+  somewhere separate.
+- Your home folder path becomes `~` by default; other personal data is not removed, so review before sharing.

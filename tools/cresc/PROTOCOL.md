@@ -7,7 +7,7 @@ type: reference
 date-created: 2026-11-08
 date-modified: 2026-11-08
 date-published:
-source: "tools/cresc/cresc/serve.py, protocol 1, cresc 0.3.0"
+source: "tools/cresc/cresc/serve.py, protocol 1, cresc 0.4.0"
 domain: macos-security
 url:
 draft: true
@@ -71,6 +71,9 @@ Names are letters, digits, `.`, `_`, `-` (profiles). Paths must be absolute. `ru
 | `run.list` / `run.get` | `name` / `name`, `run?` | `runs: [meta]` / `meta`, `triage` |
 | `run.output` | `name`, `run?`, `bytes?` | `exit`, `args`, `cwd`, `stdout`, `stderr` (`{bytes, truncated, text}`, control characters escaped) |
 | `run.compare` | `name`, `a`, `b` | `resolved`, `new`, `persisting`, `a`, `b` |
+| `run.export` | `name`, `run?`, `path?` (absolute `.zip`), `events_file?`, `redact?` (default true), `force?` | `path`, `sha256`, `bytes`, `top`, `files`: an evidence bundle of that run (`cresc.bundle/1`) |
+| `bundle.verify` | `path` | `ok`, `checked`, `problems[]` |
+| `esd.status` | `socket?` | `available`, and when reachable `state`, `version`, `fda` |
 | `watch.start` | `source: {file, follow?}`, `scopes?: [{kind, value}]`, `no_follow?`, `mute?[]`, `no_mute?`, `kinds?[]`, `denials?[]`, `settle?` | `watch_id` |
 | `watch.stop` / `watch.stats` | `watch_id` | `stopping` / `running`, `stats` |
 

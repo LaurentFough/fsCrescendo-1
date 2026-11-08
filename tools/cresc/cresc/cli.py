@@ -16,6 +16,7 @@ from . import SCHEMAS, __version__
 from .classify import path_entries, risk
 from .denials import Group, fold, parse_lines
 from .rules import synthesize
+from .export import ExportError
 from .profile import Profile, ProfileError, default_store
 from .scope import DEFAULT_MUTE, Filter, parse_scope
 from .session import (LogWatcher, SessionError, compare_groups, latest_run_number, list_runs, load_run, run_once,
@@ -276,6 +277,39 @@ def cmd_output(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """Zip everything about one run (record, output, denials, analysis, profile, hashes) as an evidence bundle."""
+    from .export import build_bundle, default_bundle_path
+    prof = Profile.load(args.store, args.name)
+    number = latest_run_number(prof) if args.run == "last" else int(args.run)
+    home = os.path.expanduser("~")
+    out = os.path.abspath(args.output) if args.output else default_bundle_path(args.store, prof.name, number)
+    result = build_bundle(prof, number, out, path_entries(os.environ.get("PATH", ""), home), home,
+                          redact=not args.no_redact, force=args.force,
+                          events_file=os.path.abspath(args.events) if args.events else None)
+    if args.json:
+        emit_json(dict(result, schema=SCHEMAS["bundle"]))
+    else:
+        print("bundle : %s" % result["path"])
+        print("sha256 : %s   (record this elsewhere if the bundle is evidence)" % result["sha256"])
+        print("files  : %d, %d bytes" % (len(result["files"]), result["bytes"]))
+        if args.no_redact:
+            print("NOTE   : not redacted - paths are as on this machine")
+    return 0
+
+
+def cmd_verify_bundle(args: argparse.Namespace) -> int:
+    from .export import verify_bundle
+    result = verify_bundle(os.path.abspath(args.bundle))
+    if args.json:
+        emit_json({"schema": SCHEMAS["bundle"], "ok": result["ok"], "checked": result["checked"], "problems": result["problems"]})
+    else:
+        print("%s: %d file(s) checked" % ("OK" if result["ok"] else "FAILED", result["checked"]))
+        for problem in result["problems"]:
+            print("  - %s" % problem)
+    return 0 if result["ok"] else 1
+
+
 def cmd_watch(args: argparse.Namespace) -> int:
     """Event view from eslogger JSON (file or pipe), scoped and optionally merged with Sandbox denials.
     Only Apple's eslogger needs root:  sudo eslogger exec fork exit open close write create rename unlink | cresc watch -"""
@@ -516,6 +550,17 @@ def build_parser() -> argparse.ArgumentParser:
     p = sp.add_parser("serve", help="machine-readable JSON-lines interface on stdin/stdout, for a GUI (see PROTOCOL.md)")
     add_common(p); p.set_defaults(func=cmd_serve)
 
+    p = sp.add_parser("export", help="zip one run (record, output, denials, analysis, profile, SHA-256 manifest) as an evidence bundle")
+    add_common(p); p.add_argument("name"); p.add_argument("--run", default="last", help="run number or 'last' (default)")
+    p.add_argument("-o", "--output", metavar="FILE.zip", help="where to write it (default: <store>/exports/)")
+    p.add_argument("--events", metavar="FILE", help="also include this eslogger JSON-lines capture")
+    p.add_argument("--no-redact", action="store_true", help="keep your home folder path instead of replacing it with ~")
+    p.add_argument("--force", action="store_true", help="replace an existing output file")
+    p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_export)
+
+    p = sp.add_parser("verify-bundle", help="check an evidence bundle against its manifest")
+    add_common(p); p.add_argument("bundle"); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_verify_bundle)
+
     p = sp.add_parser("runs", help="list the runs of a profile")
     add_common(p); p.add_argument("name"); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_runs)
 
@@ -546,7 +591,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         args.profile = args.name           #= `grant NAME --run N` reads run N of that same profile
     try:
         return int(args.func(args) or 0)
-    except (CliError, ProfileError, SessionError) as exc:
+    except (CliError, ProfileError, SessionError, ExportError) as exc:
         print("cresc: error: %s" % exc, file=sys.stderr)
         return exc.code if isinstance(exc, CliError) else 65
     except BrokenPipeError:

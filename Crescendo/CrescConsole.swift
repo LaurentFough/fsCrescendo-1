@@ -1,6 +1,7 @@
 import Cocoa
+import UniformTypeIdentifiers
 
-//= CrescConsole.swift  version 0.2.0 (2026-11-08)
+//= CrescConsole.swift  version 0.3.0 (2026-11-08)
 //= The cresc console: Sessions, Denials, Profile and Events tabs, driven by the `cresc serve` engine.
 //= Workflow: run a program under a sandbox profile -> review its denials -> grant rules -> stop and restart -> compare.
 //= Everything is built in code (no storyboard changes). Opened from the menu bar item "Cresc Console...".
@@ -272,7 +273,13 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         ])
         grants.orientation = .horizontal
 
-        let stack = NSStackView(views: [top, tableScroll, detailScroll, grants])
+        let evidence = NSStackView(views: [
+            button("Export evidence...", "Zip everything about the shown run (record, output, denials, analysis, profile, SHA-256 manifest) for an investigation", #selector(exportEvidence)),
+            button("Verify bundle...", "Check an evidence zip against its manifest to see whether any file was changed", #selector(verifyBundle)),
+        ])
+        evidence.orientation = .horizontal
+
+        let stack = NSStackView(views: [top, tableScroll, detailScroll, grants, evidence])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -631,6 +638,58 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
             case let .failure(err):
                 self.log("grant failed: \(err.code): \(err.message)")
             }
+        }
+    }
+
+    //= ---- evidence bundle -----------------------------------------------------------------------------------
+    @objc private func exportEvidence() {
+        guard let run = shownRun, !profileName.isEmpty else { log("load a run first (Denials tab)"); return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType.zip]
+        panel.nameFieldStringValue = "\(profileName)-run\(run)-evidence.zip"
+        panel.message = "Save an evidence bundle for run \(run): record, program output, denials, analysis, profile and a SHA-256 manifest."
+        let redact = NSButton(checkboxWithTitle: "Replace my home folder path with ~", target: nil, action: nil)
+        redact.state = .on
+        redact.toolTip = "Removes your home folder path from the text files. Other personal data is NOT removed: review before sharing."
+        panel.accessoryView = redact
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        //= NSSavePanel already asked about replacing an existing file, hence force
+        engine.call("run.export", ["name": profileName, "run": run, "path": url.path, "force": true,
+                                   "redact": redact.state == .on]) { [weak self] result in
+            switch result {
+            case let .success(info):
+                let hash = info["sha256"] as? String ?? "?"
+                self?.log("evidence bundle written: \(url.path)")
+                self?.log("sha256 \(hash)  (keep this somewhere separate if the bundle is evidence)")
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            case let .failure(err):
+                self?.log("export failed: \(err.code): \(err.message)")
+            }
+        }
+    }
+
+    @objc private func verifyBundle() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [UTType.zip]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose an evidence bundle to verify against its manifest."
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        engine.call("bundle.verify", ["path": url.path]) { [weak self] result in
+            let alert = NSAlert()
+            switch result {
+            case let .success(info):
+                let ok = info["ok"] as? Bool ?? false
+                let problems = info["problems"] as? [String] ?? []
+                alert.messageText = ok ? "Bundle is intact" : "Bundle does NOT match its manifest"
+                alert.informativeText = ok ? "\(info["checked"] ?? 0) file(s) checked; every hash matches."
+                    : problems.prefix(12).joined(separator: "\n")
+                alert.alertStyle = ok ? .informational : .critical
+            case let .failure(err):
+                alert.messageText = "Could not verify"
+                alert.informativeText = err.message
+                self?.log("verify failed: \(err.message)")
+            }
+            alert.runModal()
         }
     }
 

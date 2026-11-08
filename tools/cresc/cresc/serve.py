@@ -174,7 +174,7 @@ class Server:
             "triage.run": self.m_triage_run, "triage.lines": self.m_triage_lines,
             "run.start": self.m_run_start, "run.stop": self.m_run_stop, "run.list": self.m_run_list,
             "run.get": self.m_run_get, "run.output": self.m_run_output, "run.compare": self.m_run_compare,
-            "esd.status": self.m_esd_status, "watch.start": self.m_watch_start, "watch.stop": self.m_watch_stop, "watch.stats": self.m_watch_stats,
+            "run.export": self.m_run_export, "bundle.verify": self.m_bundle_verify, "esd.status": self.m_esd_status, "watch.start": self.m_watch_start, "watch.stop": self.m_watch_stop, "watch.stats": self.m_watch_stats,
         }
 
     #= ---- output ------------------------------------------------------------------------------------------
@@ -454,6 +454,31 @@ class Server:
         except SessionError as exc:
             raise ApiError("not_found", str(exc))
         return dict(compare_groups(a.groups, b.groups), a=a.meta, b=b.meta)
+
+    def m_run_export(self, p: Dict) -> Dict:
+        """Evidence bundle for one run. `path` (absolute, .zip) is optional; the default is <store>/exports/."""
+        from .export import ExportError, build_bundle, default_bundle_path
+        prof = self.profile(p)
+        path = p_str(p, "path", required=False)
+        if path is not None and not os.path.isabs(path):
+            raise ApiError("invalid_params", "path must be absolute")
+        number = run_ref(p, prof)
+        entries, home = self.context(p)
+        events_file = p_str(p, "events_file", required=False)
+        try:
+            result = build_bundle(prof, number, path or default_bundle_path(self.store, prof.name, number), entries, home,
+                                  redact=p_bool(p, "redact", default=True), force=p_bool(p, "force"), events_file=events_file)
+        except ExportError as exc:
+            raise ApiError("session_error", str(exc))
+        return dict(result, schema=SCHEMAS["bundle"], run=number)
+
+    def m_bundle_verify(self, p: Dict) -> Dict:
+        from .export import verify_bundle
+        path = p_str(p, "path")
+        if not os.path.isabs(path):
+            raise ApiError("invalid_params", "path must be absolute")
+        r = verify_bundle(path)
+        return {"ok": r["ok"], "checked": r["checked"], "problems": r["problems"]}
 
     #= ---- methods: watches --------------------------------------------------------------------------------
     def m_esd_status(self, p: Dict) -> Dict:
