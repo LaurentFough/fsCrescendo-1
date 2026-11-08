@@ -56,7 +56,9 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         } catch { return "cannot create \(dir): \(error.localizedDescription)" }
         var st = stat()
         if lstat(path, &st) == 0 {
-            return (st.st_mode & 0o170000) == 0o010000 //= S_IFMT / S_IFIFO as literals (macro types differ between SDKs) ? nil : "\(path) exists and is not a FIFO"
+            //= 0o170000 = S_IFMT and 0o010000 = S_IFIFO, as literals (the macro types differ between SDKs)
+            let isFifo = (st.st_mode & 0o170000) == 0o010000
+            return isFifo ? nil : "\(path) exists and is not a FIFO"
         }
         return mkfifo(path, 0o600) == 0 ? nil : "mkfifo failed: \(String(cString: strerror(errno)))"
     }
@@ -127,8 +129,9 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         var params: [String: Any] = ["source": ["file": EventsPane.fifoPath(), "follow": false]]
         let kinds = kindsField.stringValue.split(separator: " ").map { String($0) }
         if !kinds.isEmpty { params["kinds"] = kinds }
-        let kind = ["app", "dir", "file", "pid"].first { $0 == scopePopup.titleOfSelectedItem }
-        if let kind = kind {
+        let title = scopePopup.titleOfSelectedItem ?? ""
+        if ["app", "dir", "file", "pid"].contains(title) {
+            let kind = title
             let value = scopeValue.stringValue.trimmingCharacters(in: .whitespaces)
             if value.isEmpty { log?("ERROR: the \(kind) scope needs a value"); return }
             params["scopes"] = [["kind": kind, "value": value]]
