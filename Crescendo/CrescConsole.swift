@@ -88,6 +88,28 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         startEngine()
     }
 
+    //= Default write folder, in order of preference: ~/.local/state/crescendo/sandbox, then
+    //= ~/Library/Application Support/Crescendo/sandbox. The first one that exists or can be created (mode 0700) wins.
+    static func defaultWriteFolder() -> String {
+        let home = NSHomeDirectory()
+        let candidates = [home + "/.local/state/crescendo/sandbox", home + "/Library/Application Support/Crescendo/sandbox"]
+        for path in candidates {
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) {
+                if isDirectory.boolValue { return path }
+                continue //= something else is in the way
+            }
+            do {
+                try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true,
+                                                        attributes: [.posixPermissions: 0o700])
+                return path
+            } catch {
+                NSLog("cannot create default write folder %@: %@", path, error.localizedDescription)
+            }
+        }
+        return candidates[1]
+    }
+
     //= ---- small UI helpers ----------------------------------------------------------------------------------
     private func button(_ title: String, _ tip: String, _ action: Selector) -> NSButton {
         let b = NSButton(title: title, target: self, action: action)
@@ -203,7 +225,9 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         targetField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let choose = button("Choose...", "Pick the program with a file dialog", #selector(chooseTarget))
         let targetRow = NSStackView(views: [targetField, choose])
-        let savedDirs = UserDefaults.standard.stringArray(forKey: "cresc.writeDirs") ?? [NSHomeDirectory() + "/tmp/_sandbox"]
+        var savedDirs = UserDefaults.standard.stringArray(forKey: "cresc.writeDirs") ?? []
+        //= older builds defaulted to ~/tmp/_sandbox: if that was never changed, move to the new default
+        if savedDirs.isEmpty || savedDirs == [NSHomeDirectory() + "/tmp/_sandbox"] { savedDirs = [CrescConsole.defaultWriteFolder()] }
         writeDirs.setValues(savedDirs)
         arguments.setValues(UserDefaults.standard.stringArray(forKey: "cresc.args") ?? [])
 

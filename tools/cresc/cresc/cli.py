@@ -449,7 +449,7 @@ def cmd_loop(args: argparse.Namespace) -> int:
 
 #= ---- argument parsing -------------------------------------------------------------------------------------
 def add_common(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--store", default=default_store(), help="data directory (default: $CRESC_HOME or ~/.local/share/cresc)")
+    p.add_argument("--store", default=None, help="data directory (default: $CRESC_HOME or ~/.local/share/crescendo/cresc)")
     p.add_argument("--home", help="home directory used to expand ~ and $HOME (default: yours)")
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging on stderr")
 
@@ -580,6 +580,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         argv, cmd_args = argv[:i], argv[i + 1:]
     args = ap.parse_args(argv)
     args.cmd_args = cmd_args
+    if hasattr(args, "store") and args.store is None:
+        args.store = default_store()       #= resolved here, not at parser build time: --help must not move data
     logging.basicConfig(level=logging.DEBUG if getattr(args, "verbose", False) else logging.WARNING,
                         format="%(asctime)s cresc %(levelname)s %(message)s", stream=sys.stderr)
     if args.cmd == "triage":

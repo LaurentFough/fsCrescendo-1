@@ -3,6 +3,7 @@
 #= macOS tools are replaced by fakes: CRESC_SANDBOX_EXEC runs the program unconfined, CRESC_LOG prints canned denials.
 import json
 import os
+import shutil
 import signal
 import stat
 import subprocess
@@ -128,25 +129,40 @@ class ProfileTests(unittest.TestCase):
         validate_sbpl(text)
         self.assertNotIn("\n(allow default)", text)           #= newlines in a note are flattened into the comment line
 
-    def test_default_store_keeps_pre_rename_data(self):
-        #= fsx was renamed to cresc: an existing ~/.local/share/fsx (and FSX_HOME) must keep working
+    def test_default_store_location_and_migration(self):
+        #= new default ~/.local/share/crescendo/cresc; older defaults (cresc, fsx) are moved there, never orphaned
         saved = {k: os.environ.get(k) for k in ("HOME", "CRESC_HOME", "FSX_HOME")}
+        real_rename = os.rename
         try:
             home = os.path.realpath(self.tmp.name)
             os.environ["HOME"] = home
             os.environ.pop("CRESC_HOME", None)
             os.environ.pop("FSX_HOME", None)
             base = os.path.join(home, ".local", "share")
-            self.assertEqual(default_store(), os.path.join(base, "cresc"))              #= fresh machine: the new name
-            os.makedirs(os.path.join(base, "fsx"))
-            self.assertEqual(default_store(), os.path.join(base, "fsx"))                #= only old data exists: keep using it
+            new = os.path.join(base, "crescendo", "cresc")
+            self.assertEqual(default_store(), new)                                       #= fresh machine
+            self.assertFalse(os.path.exists(new))                                        #= and nothing is created just by asking
+            os.makedirs(os.path.join(base, "fsx", "profiles"))
+            with open(os.path.join(base, "fsx", "marker"), "w") as fh:
+                fh.write("old")
+            self.assertEqual(default_store(), new)                                       #= only fsx exists: moved
+            self.assertTrue(os.path.isfile(os.path.join(new, "marker")))
+            self.assertFalse(os.path.exists(os.path.join(base, "fsx")))
             os.makedirs(os.path.join(base, "cresc"))
-            self.assertEqual(default_store(), os.path.join(base, "cresc"))              #= new data exists: it wins
+            self.assertEqual(default_store(), new)                                       #= new data exists: it wins...
+            self.assertTrue(os.path.isdir(os.path.join(base, "cresc")))                  #= ...and the leftover is untouched
+            shutil.rmtree(os.path.join(base, "crescendo"))
+            def failing_rename(src, dst):
+                raise OSError("simulated cross-device move")
+            os.rename = failing_rename
+            self.assertEqual(default_store(), os.path.join(base, "cresc"))               #= cannot move: keep using it in place
+            os.rename = real_rename
             os.environ["FSX_HOME"] = "/legacy/env"
-            self.assertEqual(default_store(), "/legacy/env")                            #= the old variable still works...
+            self.assertEqual(default_store(), "/legacy/env")                             #= the old variable still works...
             os.environ["CRESC_HOME"] = "/new/env"
-            self.assertEqual(default_store(), "/new/env")                               #= ...but the new one wins
+            self.assertEqual(default_store(), "/new/env")                                #= ...but the new one wins
         finally:
+            os.rename = real_rename
             for k, v in saved.items():
                 if v is None:
                     os.environ.pop(k, None)

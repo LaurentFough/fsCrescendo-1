@@ -23,7 +23,7 @@ keywords:
 
 # cresc
 
-*Renamed from `fsx` in 0.2.0.* The old data directory `~/.local/share/fsx` and the `FSX_HOME` variable are still honoured, so existing profiles and runs keep working. The test hooks are now `CRESC_LOG` and `CRESC_SANDBOX_EXEC`.
+*Renamed from `fsx` in 0.2.0.* Data lives in `~/.local/share/crescendo/cresc` (override: `CRESC_HOME`). Data in the older locations `~/.local/share/cresc` and `~/.local/share/fsx` is moved there automatically on first use (one rename; if that is impossible the old folder is used in place). The `FSX_HOME` variable is still honoured. The test hooks are now `CRESC_LOG` and `CRESC_SANDBOX_EXEC`.
 
 Standard-library Python (3.9+), no dependencies. Everything except actually running a program is pure logic and is tested on any OS (`make cresc-test`).
 
@@ -38,7 +38,7 @@ Standard-library Python (3.9+), no dependencies. Everything except actually runn
 ```bash
 cd tools/cresc                                   # or: PYTHONPATH=tools/cresc python3 -m cresc ...
 python3 -m cresc profile new demo
-python3 -m cresc loop demo --target ./the-binary --write-dir ~/tmp/_sandbox -- --its-flags
+python3 -m cresc loop demo --target ./the-binary --write-dir ~/.local/state/crescendo/sandbox -- --its-flags
 #   run -> shows denials -> "g low" grants the low-risk ones -> restarts under v2 -> ...
 python3 -m cresc runs demo
 python3 -m cresc compare demo 1 2
@@ -61,7 +61,7 @@ Non-interactive pieces (what a GUI calls):
 | `cresc serve` | JSON-lines interface on stdin/stdout for a GUI, see [PROTOCOL.md](PROTOCOL.md) |
 | `cresc watch [FILE|-] [--app/--dir/--file/--pid ...]` | live or replayed event view from `eslogger` JSON (`--json`: `cresc.event/1`) |
 
-Program arguments go after a literal `--`. Data lives in `$CRESC_HOME` (default `~/.local/share/cresc`).
+Program arguments go after a literal `--`. Data lives in `$CRESC_HOME` (default `~/.local/share/crescendo/cresc`).
 
 ## Watching events (`cresc watch`)
 

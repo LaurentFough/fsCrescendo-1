@@ -106,7 +106,7 @@ The server never runs as root and never starts `eslogger` itself. A privileged h
 ```text
 > {"id":1,"method":"profile.new","params":{"name":"demo"}}
 < {"id":1,"ok":true,"result":{"name":"demo","version":1}}
-> {"id":2,"method":"run.start","params":{"name":"demo","target":"./tool","write_dirs":["/Users/me/tmp/_sandbox"],"args":["-machine"]}}
+> {"id":2,"method":"run.start","params":{"name":"demo","target":"./tool","write_dirs":["/Users/me/.local/state/crescendo/sandbox"],"args":["-machine"]}}
 < {"event":"run.started","data":{"name":"demo","run":1,"profile_version":1}}
 < {"id":2,"ok":true,"result":{"name":"demo","run":1,"profile_version":1}}
 < {"event":"run.denial","data":{"name":"demo","run":1,"denial":{"process":"tool","pid":4242,"op":"sysctl-read","target":"hw.ncpu","count":1,"ts":null}}}

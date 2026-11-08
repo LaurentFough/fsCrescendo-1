@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import logging
 import os
 import re
 import tempfile
@@ -25,14 +26,30 @@ class ProfileError(Exception):
 
 
 def default_store() -> str:
-    #= CRESC_HOME wins. FSX_HOME and ~/.local/share/fsx are the names used before the rename (fsx -> cresc):
-    #= they are still honoured so existing profiles and runs are not orphaned.
+    """Where profiles and runs live: $CRESC_HOME (or the pre-rename $FSX_HOME), else ~/.local/share/crescendo/cresc.
+    Data in an older default location (~/.local/share/cresc, then ~/.local/share/fsx) is MOVED to the new one the first
+    time it is needed (one atomic rename, nothing is copied or deleted). If the move is impossible the old directory
+    is used as it is, so existing profiles and runs are never orphaned."""
     env = os.environ.get("CRESC_HOME") or os.environ.get("FSX_HOME")
     if env:
         return env
     base = os.path.join(os.path.expanduser("~"), ".local", "share")
-    new, old = os.path.join(base, "cresc"), os.path.join(base, "fsx")
-    return old if (not os.path.isdir(new) and os.path.isdir(old)) else new
+    new = os.path.join(base, "crescendo", "cresc")
+    if os.path.isdir(new):
+        return new
+    for legacy in (os.path.join(base, "cresc"), os.path.join(base, "fsx")):
+        if os.path.isdir(legacy):
+            try:
+                os.makedirs(os.path.dirname(new), exist_ok=True)
+                os.rename(legacy, new)
+            except OSError as exc:
+                if os.path.isdir(new):
+                    return new                  #= another cresc process moved it first
+                logging.getLogger("cresc").warning("cannot move %s to %s (%s); using it where it is", legacy, new, exc)
+                return legacy
+            logging.getLogger("cresc").warning("moved the data directory %s to %s", legacy, new)
+            return new
+    return new
 
 
 def validate_sbpl(text: str) -> None:
