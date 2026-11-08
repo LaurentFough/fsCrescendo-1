@@ -64,3 +64,14 @@ started as `python3 -m cresc serve`; override with `CRESC_PYTHON` / `CRESC_ENGIN
   window running `sudo eslogger ... > fifo` (generated `run-eslogger.command`, 0700); type your sudo password there.
   **Stop** closes the FIFO and eslogger exits on its next write. Terminal needs Full Disk Access; the app needs no
   privileges or entitlements. 5000 rows are kept, with search, pause and autoscroll.
+
+## Console reference (v0.2)
+- **Sessions**: profile (pick or type), program (Choose...), *Write folders* and *Arguments* as editable rows with
+  `Add...` (file/folder dialog), `+`, `-` and drag-and-drop from the Finder. Entries are remembered between launches.
+  Every control has a tooltip.
+- **Denials**: run picker (new runs appear automatically), `Candidates | All` filter, search, a Change column
+  (new / persisting vs the previous run; resolved ones are counted in the summary), a detail box (why it was classified,
+  the rule, notes), and the buttons Grant selected, Grant selected & restart, Grant all low-risk, Grant up to medium,
+  Add rule by hand.
+- **Profile**: history of every change, the sandbox text of the selected version, Diff with previous, Revoke selected grant.
+- **Events**: see above; kinds are rows; the scope has a picker.

@@ -27,7 +27,10 @@ final class EventsPane: NSObject, NSTableViewDataSource {
 
     private let scopePopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let scopeValue = NSTextField(string: "")
-    private let kindsField = NSTextField(string: "")
+    private let kinds = ListField(pick: .none,
+                                  hint: "Only show these kinds, one pattern per row (empty = all). * is a wildcard.",
+                                  tip: "Examples: file.* (all file events), proc.exec, file.write, ipc.connect", visibleRows: 2)
+    private let scopeChoose = NSButton(title: "Choose...", target: nil, action: nil)
     private let searchField = NSSearchField()
     private let pauseCheck = NSButton(checkboxWithTitle: "Pause", target: nil, action: nil)
     private let scrollCheck = NSButton(checkboxWithTitle: "Autoscroll", target: nil, action: nil)
@@ -102,16 +105,33 @@ final class EventsPane: NSObject, NSTableViewDataSource {
     //= ---- UI ------------------------------------------------------------------------------------------------
     private func build() {
         scopePopup.addItems(withTitles: ["all events", "app", "dir", "file", "pid"])
+        scopePopup.toolTip = "What to watch: everything, or only one app (and the processes it starts), a folder, a file or a process id"
         scopeValue.placeholderString = "app name or path / absolute path / pid"
-        kindsField.placeholderString = "kinds, e.g. file.* proc.exec (empty = all)"
+        scopeValue.toolTip = "app: a name like Safari or a path to an .app; dir/file: an absolute path; pid: a number"
+        scopeChoose.target = self
+        scopeChoose.action = #selector(chooseScope)
+        scopeChoose.toolTip = "Pick the app, folder or file with a file dialog"
+        scopePopup.target = self
+        scopePopup.action = #selector(scopeKindChanged)
         let start = NSButton(title: "Start", target: self, action: #selector(startWatch))
+        start.toolTip = "Begin capturing events with the chosen scope and kinds"
         let stop = NSButton(title: "Stop", target: self, action: #selector(stopWatch))
+        stop.toolTip = "Stop capturing (with the event daemon, eslogger is stopped too)"
         let clear = NSButton(title: "Clear", target: self, action: #selector(clearRows))
-        let controlRow = NSStackView(views: [NSTextField(labelWithString: "Scope:"), scopePopup, scopeValue, kindsField, start, stop, clear])
+        clear.toolTip = "Remove the captured rows from the table"
+        let scopeBox = NSStackView(views: [NSTextField(labelWithString: "Scope:"), scopePopup, scopeValue, scopeChoose])
         scopeValue.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        kindsField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let actions = NSStackView(views: [start, stop, clear])
+        let controlRow = NSStackView(views: [scopeBox, kinds.view, actions])
+        controlRow.orientation = .horizontal
+        controlRow.alignment = .top
+        controlRow.distribution = .fill
 
         searchField.placeholderString = "filter shown rows"
+        searchField.toolTip = "Show only captured rows that contain this text"
+        pauseCheck.toolTip = "With the event daemon: stop eslogger and resume later. Otherwise: freeze the table."
+        scrollCheck.toolTip = "Keep the newest row in view"
+        daemonLabel.toolTip = "State of the event daemon that runs eslogger for this app"
         searchField.target = self
         searchField.action = #selector(filterChanged)
         scrollCheck.state = .on
@@ -134,6 +154,7 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         view.alignment = .leading
         view.spacing = 8
         view.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        scopeKindChanged() //= initial state: nothing to choose for "all events"
         bannerBox.orientation = .horizontal
         bannerBox.addArrangedSubview(bannerLabel)
         bannerBox.addArrangedSubview(bannerButton)
@@ -261,8 +282,8 @@ final class EventsPane: NSObject, NSTableViewDataSource {
             if let problem = prepareFifo() { log?("ERROR: \(problem)"); return }
             params = ["source": ["file": EventsPane.fifoPath(), "follow": false]]
         }
-        let kinds = kindsField.stringValue.split(separator: " ").map { String($0) }
-        if !kinds.isEmpty { params["kinds"] = kinds }
+        let kindValues = kinds.values
+        if !kindValues.isEmpty { params["kinds"] = kindValues }
         let title = scopePopup.titleOfSelectedItem ?? ""
         if ["app", "dir", "file", "pid"].contains(title) {
             let kind = title
@@ -310,6 +331,22 @@ final class EventsPane: NSObject, NSTableViewDataSource {
             pausedByUser = false
             startWatch()
         }
+    }
+
+    @objc private func scopeKindChanged() {
+        let title = scopePopup.titleOfSelectedItem ?? ""
+        scopeChoose.isEnabled = ["app", "dir", "file"].contains(title)
+    }
+
+    @objc private func chooseScope() {
+        let title = scopePopup.titleOfSelectedItem ?? ""
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = title == "dir" || title == "app" //= .app bundles are directories
+        panel.canChooseFiles = title == "file" || title == "app"
+        if title == "app" { panel.directoryURL = URL(fileURLWithPath: "/Applications") }
+        panel.prompt = "Choose"
+        if panel.runModal() == .OK, let url = panel.url { scopeValue.stringValue = url.path }
     }
 
     @objc private func clearRows() {
