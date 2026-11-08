@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0C0E5C01250000000000B003 /* EventsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A003 /* EventsPane.swift */; };
 		0C0E5C01250000000000B002 /* CrescConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A002 /* CrescConsole.swift */; };
 		0C0E5C01250000000000B001 /* EngineClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A001 /* EngineClient.swift */; };
 		0813A15F240DB2F2009F84E1 /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0813A15E240DB2F2009F84E1 /* Images.xcassets */; };
@@ -80,6 +81,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0C0E5C01250000000000A003 /* EventsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventsPane.swift; sourceTree = "<group>"; };
 		0C0E5C01250000000000A002 /* CrescConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrescConsole.swift; sourceTree = "<group>"; };
 		0C0E5C01250000000000A001 /* EngineClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineClient.swift; sourceTree = "<group>"; };
 		0813A15E240DB2F2009F84E1 /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
@@ -172,6 +174,7 @@
 				4C4DEEA023F2270F00AE279A /* ViewController.swift */,
 				08B342792406E3B000457332 /* SystemExtensionHelpers.swift */,
 				08B3427B2406E42F00457332 /* TableViewHelper.swift */,
+				0C0E5C01250000000000A003 /* EventsPane.swift */,
 				0C0E5C01250000000000A002 /* CrescConsole.swift */,
 				0C0E5C01250000000000A001 /* EngineClient.swift */,
 				0813A15E240DB2F2009F84E1 /* Images.xcassets */,
@@ -431,6 +434,7 @@
 				4CFE19F723F2516100EBDF0E /* IPCConnection.swift in Sources */,
 				4C4DEEA123F2270F00AE279A /* ViewController.swift in Sources */,
 				08B3427C2406E42F00457332 /* TableViewHelper.swift in Sources */,
+				0C0E5C01250000000000B003 /* EventsPane.swift in Sources */,
 				0C0E5C01250000000000B002 /* CrescConsole.swift in Sources */,
 				0C0E5C01250000000000B001 /* EngineClient.swift in Sources */,
 				4C26976923BCFDDB0031487C /* AppDelegate.swift in Sources */,

@@ -7,6 +7,7 @@ import Cocoa
 
 final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate {
     private let engine = EngineClient()
+    private let events = EventsPane()
     let window: NSWindow
 
     //= state
@@ -107,14 +108,10 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         tableScroll.widthAnchor.constraint(equalTo: denials.widthAnchor, constant: -24).isActive = true
         addTab(tabs, "Denials", denials)
 
-        //= Events (placeholder until the privileged eslogger helper exists)
-        let events = NSTextField(wrappingLabelWithString: "Live system events need the privileged eslogger helper "
-            + "(it writes eslogger output to a FIFO that this app reads through `watch.start`). "
-            + "That is the next step; the engine side is already done.")
-        events.preferredMaxLayoutWidth = 600
-        let eventsBox = NSStackView(views: [events])
-        eventsBox.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-        addTab(tabs, "Events", eventsBox)
+        //= Events: privileged eslogger feeds a FIFO that the engine reads (see EventsPane.swift)
+        events.call = { [weak self] method, params, reply in self?.engine.call(method, params, reply: reply) }
+        events.log = { [weak self] text in self?.log(text) }
+        addTab(tabs, "Events", events.view)
 
         let root = NSStackView(views: [statusLabel, tabs])
         root.orientation = .vertical
@@ -192,7 +189,7 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
             runActive = false
             log("run error: \(data["message"] ?? "")")
         default:
-            break
+            events.handle(name, data)
         }
     }
 
