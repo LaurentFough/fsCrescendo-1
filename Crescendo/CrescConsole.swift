@@ -109,13 +109,26 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         return row
     }
 
-    private func scrolling(_ view: NSView, minHeight: CGFloat) -> NSScrollView {
+    //= `grows`: this scroll view takes the spare height of its tab (one per tab); the others stay near minHeight
+    private func scrolling(_ view: NSView, minHeight: CGFloat, grows: Bool = false) -> NSScrollView {
         let scroll = NSScrollView()
         scroll.documentView = view
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: minHeight).isActive = true
+        scroll.setContentHuggingPriority(NSLayoutConstraint.Priority(grows ? 1 : 750), for: .vertical)
         return scroll
+    }
+
+    //= read-only text that wraps to the width of its scroll view and grows downwards
+    private func configureText(_ textView: NSTextView) {
+        textView.isEditable = false
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainerInset = NSSize(width: 4, height: 4)
     }
 
     private func pinWidths(_ stack: NSStackView, inset: CGFloat = 24) {
@@ -159,9 +172,20 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
     }
 
     private func addTab(_ tabs: NSTabView, _ title: String, _ view: NSView) {
+        //= The tab view gives its item view a frame but stack views size themselves to their contents, so the content
+        //= is pinned to all four edges of a plain container; that is what makes it follow the window size.
+        let container = NSView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(view)
+        NSLayoutConstraint.activate([
+            view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            view.topAnchor.constraint(equalTo: container.topAnchor),
+            view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
         let item = NSTabViewItem(identifier: title)
         item.label = title
-        item.view = view
+        item.view = container
         tabs.addTabViewItem(item)
     }
 
@@ -182,10 +206,10 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         writeDirs.setValues(savedDirs)
         arguments.setValues(UserDefaults.standard.stringArray(forKey: "cresc.args") ?? [])
 
-        logView.isEditable = false
+        configureText(logView)
         logView.font = NSFont.userFixedPitchFont(ofSize: 11)
         logView.toolTip = "Activity log of this window"
-        let logScroll = scrolling(logView, minHeight: 150)
+        let logScroll = scrolling(logView, minHeight: 150, grows: true)
 
         let buttons = NSStackView(views: [
             button("Start", "Run the program under the profile and watch its sandbox denials", #selector(startRun)),
@@ -232,9 +256,9 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
                   tips: Dictionary(uniqueKeysWithValues: denialColumns.map { ($0.id, $0.tip) }))
         denialTable.allowsMultipleSelection = true
         denialTable.toolTip = "Select rows, then use the buttons below. Rows without a rule cannot be granted."
-        let tableScroll = scrolling(denialTable, minHeight: 220)
+        let tableScroll = scrolling(denialTable, minHeight: 220, grows: true)
 
-        detailView.isEditable = false
+        configureText(detailView)
         detailView.font = NSFont.userFixedPitchFont(ofSize: 11)
         detailView.toolTip = "Details of the selected denial"
         let detailScroll = scrolling(detailView, minHeight: 90)
@@ -263,10 +287,10 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         historyTable.toolTip = "Every change to the profile. Select a row to see that version's sandbox text."
         let tableScroll = scrolling(historyTable, minHeight: 150)
 
-        sbplView.isEditable = false
+        configureText(sbplView)
         sbplView.font = NSFont.userFixedPitchFont(ofSize: 11)
         sbplView.toolTip = "The sandbox profile text (SBPL) of the selected version"
-        let sbplScroll = scrolling(sbplView, minHeight: 220)
+        let sbplScroll = scrolling(sbplView, minHeight: 220, grows: true)
 
         let buttons = NSStackView(views: [
             button("Refresh", "Reload the history from the engine", #selector(refreshProfile)),

@@ -149,6 +149,8 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         table.dataSource = self
         scroll.documentView = table
         scroll.hasVerticalScroller = true
+        scroll.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .vertical) //= the table takes the spare height
+        scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 200).isActive = true
 
         view.orientation = .vertical
         view.alignment = .leading
