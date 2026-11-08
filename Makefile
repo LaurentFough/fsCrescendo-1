@@ -187,7 +187,7 @@ build-xcode: require-xcode require-sign #= Full Xcode build; SIGN=local (default
 build-lite: require-xcode #= Build the LITE app (no Endpoint Security extension, no restricted entitlements): runs on a normal Mac
 	@$(call say,building $(APP_TARGET) [$(CONFIG)] unsigned, then packaging the lite app)
 	@$(XCB) -target $(APP_TARGET) $(QUIET) $(UNSIGNED_FLAGS) build
-	@sh scripts/lite-package.sh "$(APP_PATH)" "$(LITE_APP)" "$(LITE_ENT)"
+	@sh scripts/lite-package.sh "$(APP_PATH)" "$(LITE_APP)" "$(LITE_ENT)" tools/cresc
 	@$(call say,lite build ok: $(LITE_APP))
 	@$(call say,run it with: open "$(LITE_APP)")
 

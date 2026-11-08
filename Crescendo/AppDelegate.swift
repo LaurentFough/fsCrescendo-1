@@ -12,6 +12,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.regular)
     }
 
+    //= cresc console (Sessions / Denials / Events), created on first use
+    var console: CrescConsole?
+
+    @objc func showConsole(_: Any?) {
+        if console == nil { console = CrescConsole() }
+        console?.show()
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        console?.shutdown()
+    }
+
     @objc func showWindow(_: Any?) {
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -20,6 +32,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         menu.addItem(NSMenuItem(title: "Show App Window", action: #selector(showWindow), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Cresc Console...", action: #selector(showConsole), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem(title: "Run in Background", action: #selector(hideDockIcon), keyEquivalent: ""))

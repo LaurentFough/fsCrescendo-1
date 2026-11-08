@@ -51,3 +51,11 @@ open build/lite/Crescendo.app
 - Verified here only by static checks (Linux): the Swift change type-checks nowhere in this environment, so the first
   `make build-lite` on your Mac is the real test. Send me the output if it fails.
 - The full ES build is unchanged: `make build` (needs a relaxed VM to run).
+
+## Cresc console (step 1a)
+Menu bar item **Cresc Console...** opens a window driven by the bundled engine (`Contents/Resources/cresc-engine`,
+started as `python3 -m cresc serve`; override with `CRESC_PYTHON` / `CRESC_ENGINE_DIR`):
+- **Sessions**: profile, program, write dirs (`:`-separated), arguments; Start / Stop / Restart.
+- **Denials**: candidates from the last run with their generated rules; Grant selected, Grant all low-risk,
+  Grant selected & restart (high-risk rules ask for confirmation first).
+- **Events**: placeholder until the privileged `eslogger` helper (FIFO) exists.

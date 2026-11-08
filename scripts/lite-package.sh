@@ -1,19 +1,20 @@
 #!/bin/sh
-#= lite-package.sh  version 1.0.0 (2026-11-08)
+#= lite-package.sh  version 1.1.0 (2026-11-08)
 #= Turns a built (unsigned) Crescendo.app into the "lite" app: the Endpoint Security system extension is
 #= removed and the app is ad-hoc signed ("Sign to Run Locally") with EMPTY entitlements, so it launches on an
 #= unmodified Mac (SIP and AMFI on) without any Apple-approved entitlement.
-#= Usage : lite-package.sh IN.app OUT.app EMPTY.entitlements
+#= Usage : lite-package.sh IN.app OUT.app EMPTY.entitlements [ENGINE_DIR]
+#=          ENGINE_DIR (the folder holding the `cresc` package, e.g. tools/cresc) is copied to Contents/Resources/cresc-engine
 #= Output: OUT.app (IN.app is left untouched). Verifies that no restricted entitlement survives.
 #= Exit  : 0 ok | 64 usage | 66 missing input | 70 packaging/signing/verification failed
 set -eu
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 log() { printf '%s lite-package[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$VERSION" "$1"; }
 die() { printf 'ERROR: %s\n' "$1" >&2; exit "${2:-70}"; }
 
-[ $# -eq 3 ] || die "usage: $0 IN.app OUT.app EMPTY.entitlements" 64
-IN=$1; OUT=$2; ENT=$3
+[ $# -ge 3 ] && [ $# -le 4 ] || die "usage: $0 IN.app OUT.app EMPTY.entitlements [ENGINE_DIR]" 64
+IN=$1; OUT=$2; ENT=$3; ENGINE=${4:-}
 [ -d "$IN" ]  || die "app bundle not found: $IN (run: make build-xcode SIGN=none)" 66
 [ -f "$ENT" ] || die "entitlements not found: $ENT" 66
 case "$OUT" in *.app) ;; *) die "OUT must end in .app: $OUT" 64;; esac
@@ -30,6 +31,18 @@ if command -v ditto >/dev/null 2>&1; then ditto "$IN" "$OUT"; else cp -R "$IN" "
 if [ -d "$OUT/Contents/Library/SystemExtensions" ]; then
   log "removing embedded system extension(s)"
   rm -rf "$OUT/Contents/Library/SystemExtensions"
+fi
+
+#= 2b. bundle the cresc engine (python sources only: no tests, fixtures, caches) so the signed seal covers it
+if [ -n "$ENGINE" ]; then
+  [ -f "$ENGINE/cresc/__init__.py" ] || die "not a cresc engine directory: $ENGINE" 66
+  DEST="$OUT/Contents/Resources/cresc-engine"
+  mkdir -p "$DEST"
+  ( cd "$ENGINE" && find cresc -name '*.py' -o -name '*.sb' | grep -v __pycache__ ) | while IFS= read -r f; do
+    mkdir -p "$DEST/$(dirname "$f")"
+    cp "$ENGINE/$f" "$DEST/$f"
+  done
+  log "bundled engine: $DEST ($(find "$DEST" -type f | wc -l | tr -d ' ') files)"
 fi
 
 #= 3. ad-hoc sign, empty entitlements, no hardened-runtime exceptions needed
