@@ -32,6 +32,7 @@ class Event:
     seq: Optional[int] = None                  #= global_seq_num when present (used to detect dropped events)
     pid: int = -1
     ppid: int = -1
+    responsible_pid: int = -1                  #= the process macOS holds responsible (e.g. the app that launched an XPC helper)
     process: str = ""                          #= executable path of the process that acted
     signing_id: str = ""
     team_id: str = ""
@@ -50,7 +51,8 @@ class Event:
 
     def to_dict(self) -> Dict:
         return {"schema": SCHEMAS["event"], "ts": self.ts, "seq": self.seq, "kind": self.kind,
-                "actor": {"pid": self.pid, "ppid": self.ppid, "path": self.process, "signing_id": self.signing_id,
+                "actor": {"pid": self.pid, "ppid": self.ppid, "responsible_pid": self.responsible_pid,
+                          "path": self.process, "signing_id": self.signing_id,
                           "team_id": self.team_id, "platform": self.platform},
                 "target": self.target, "target2": self.target2, "details": self.details}
 
@@ -106,6 +108,7 @@ def parse_event(line: str) -> Optional[Event]:
                ts=obj["time"] if isinstance(obj.get("time"), str) else None,
                seq=_int(obj.get("global_seq_num"), default=-1) if "global_seq_num" in obj else None,
                pid=_int(_g(proc, "audit_token", "pid")), ppid=_int(_g(proc, "ppid")),
+               responsible_pid=_int(_g(proc, "responsible_audit_token", "pid")),
                process=_path(_g(proc, "executable")),
                signing_id=_g(proc, "signing_id") if isinstance(_g(proc, "signing_id"), str) else "",
                team_id=_g(proc, "team_id") if isinstance(_g(proc, "team_id"), str) else "",
