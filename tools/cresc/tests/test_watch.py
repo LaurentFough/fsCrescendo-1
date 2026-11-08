@@ -144,7 +144,7 @@ class ScopeTests(unittest.TestCase):
         self.assertEqual(seqs(shown), [1, 14, 15, 16, 18, 21])     #= everything except pid 101's own events and mds
 
     def test_bad_scopes_are_rejected(self):
-        for kind, value in (("dir", "relative/path"), ("file", "x"), ("pid", "abc"), ("app", "")):
+        for kind, value in (("dir", "relative/path"), ("file", "x"), ("pid", "abc"), ("app", ""), ("bogus", "x"), ("app", 5)):
             with self.assertRaises(ValueError, msg=(kind, value)):
                 parse_scope(kind, value)
         self.assertEqual(parse_scope("dir", "/a/b/../c").value, "/a/c")
@@ -152,6 +152,36 @@ class ScopeTests(unittest.TestCase):
     def test_default_mute_list_has_the_spotlight_processes(self):
         for name in ("mds", "mdworker", "fseventsd", "eslogger"):
             self.assertIn(name, DEFAULT_MUTE)
+
+
+class ResponsibleScopeTests(unittest.TestCase):
+    """Helpers launched on behalf of an app (XPC services) are attributed to it by macOS (responsible_audit_token)."""
+
+    def ev(self, pid, path, kind="file.open", responsible=-1, **kw):
+        from cresc.events import Event
+        return Event(kind=kind, pid=pid, process=path, responsible_pid=responsible, target=kw.get("target", ""), details=kw.get("details", {}))
+
+    def run_scope(self, follow=True):
+        flt = Filter([parse_scope("app", "Safari")], follow=follow, self_pid=-5)
+        steps = [
+            self.ev(400, "/Applications/Safari.app/Contents/MacOS/Safari", responsible=400),
+            self.ev(410, "/System/Library/xpc/WebContent", responsible=400),        #= helper launched for Safari
+            self.ev(410, "/System/Library/xpc/WebContent", responsible=400, kind="proc.exit"),
+            self.ev(420, "/usr/bin/other", responsible=999),                         #= unrelated
+            self.ev(430, "/usr/bin/orphan", responsible=410),                        #= responsible is the (exited) helper
+        ]
+        return [flt.accept(e) for e in steps]
+
+    def test_helpers_are_followed_through_the_responsible_process(self):
+        self.assertEqual(self.run_scope(), [True, True, True, False, False])
+
+    def test_no_follow_does_not_use_the_responsible_process(self):
+        self.assertEqual(self.run_scope(follow=False), [True, False, False, False, False])
+
+    def test_unknown_responsible_pid_is_ignored(self):
+        flt = Filter([parse_scope("app", "Safari")], self_pid=-5)
+        flt.accept(self.ev(400, "/Applications/Safari.app/Contents/MacOS/Safari", responsible=400))
+        self.assertFalse(flt.accept(self.ev(500, "/x/y", responsible=-1)))
 
 
 class StatsTests(unittest.TestCase):

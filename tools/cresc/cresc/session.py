@@ -223,7 +223,9 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
              watch: Sequence[str] = (), timeout: Optional[float] = None, settle: float = 3.0,
              startup_wait: float = 1.0, grace: float = 3.0, sandbox_exec: Optional[str] = None,
              log_bin: Optional[str] = None, on_denial: Optional[Callable[[Denial], None]] = None,
-             pass_env: Sequence[str] = (), inherit_env: bool = False) -> RunResult:
+             pass_env: Sequence[str] = (), inherit_env: bool = False,
+             cancel: Optional[threading.Event] = None,
+             on_start: Optional[Callable[[int, Dict], None]] = None) -> RunResult:
     """Run `target` once under the profile's CURRENT version; return the run record (also saved on disk)."""
     sbx = sandbox_exec or os.environ.get("CRESC_SANDBOX_EXEC") or "sandbox-exec"
     target = resolve_target(target)
@@ -233,6 +235,8 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
     number = next_run_number(profile)
     rdir = os.path.join(profile.runs_dir(), str(number))
     os.makedirs(rdir)
+    if on_start is not None:
+        on_start(number, {"profile_version": version, "directory": rdir})     #= the caller learns the run number now
     argv = build_argv(sbx, profile.snapshot_path(version), target, dirs, args)
     env = child_env(pass_env, inherit_env)
     cwd = dirs[0]       #= start inside the first write dir: the program neither sees nor needs the launcher's directory
@@ -247,7 +251,7 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
     out_path, err_path = os.path.join(rdir, "stdout.txt"), os.path.join(rdir, "stderr.txt")
     started_wall = time.strftime("%Y-%m-%dT%H:%M:%S%z")
     t0 = time.time()
-    timed_out = interrupted = False
+    timed_out = interrupted = stopped = False
     with open(out_path, "wb") as fout, open(err_path, "wb") as ferr:
         try:
             proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=fout, stderr=ferr, start_new_session=True,
@@ -256,10 +260,18 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
             watcher.stop()
             raise SessionError("cannot start %s: %s" % (sbx, exc))
         try:
-            try:
-                proc.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                timed_out = True
+            deadline = None if timeout is None else time.time() + timeout
+            while True:                    #= poll so a cancel request (the GUI's "stop") takes effect within ~0.2 s
+                try:
+                    proc.wait(timeout=0.2)
+                    break
+                except subprocess.TimeoutExpired:
+                    if cancel is not None and cancel.is_set():
+                        stopped = True
+                        break
+                    if deadline is not None and time.time() >= deadline:
+                        timed_out = True
+                        break
         except KeyboardInterrupt:
             interrupted = True
         finally:
@@ -282,7 +294,7 @@ def run_once(profile: Profile, target: str, write_dirs: Sequence[str], args: Seq
     meta = {"schema": SCHEMAS["run"], "run": number, "profile": profile.name, "profile_version": version,
             "target": target, "args": list(args), "write_dirs": dirs, "cwd": cwd, "watch": names, "argv": argv,
             "env_inherited": bool(inherit_env), "env_names": sorted(env),     #= names only, never values
-            "exit": proc.returncode, "timed_out": timed_out, "interrupted": interrupted,
+            "exit": proc.returncode, "timed_out": timed_out, "interrupted": interrupted, "stopped": stopped,
             "duration_s": round(duration, 3), "started": started_wall,
             "denials_total": sum(d.count for d in denials), "groups": len(groups),
             "stdout": out_path, "stderr": err_path, "stderr_tail": tail}

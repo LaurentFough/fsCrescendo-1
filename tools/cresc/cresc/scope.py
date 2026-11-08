@@ -48,6 +48,10 @@ class Scope:
 
 
 def parse_scope(kind: str, value: str) -> Scope:
+    if kind not in ("app", "dir", "file", "pid"):
+        raise ValueError("unknown scope kind %r (use app, dir, file or pid)" % (kind,))
+    if not isinstance(value, str):
+        raise ValueError("scope value must be a string")
     if kind in ("dir", "file"):
         if not os.path.isabs(value):
             raise ValueError("%s scope needs an absolute path: %r" % (kind, value))
@@ -102,6 +106,9 @@ class Filter:
             return matched
         if matched:
             self.tracked.add(ev.pid)
+        if ev.pid not in self.tracked and ev.pid not in self._retired and ev.responsible_pid > 0 \
+                and ev.responsible_pid in self.tracked:
+            self.tracked.add(ev.pid)               #= e.g. an XPC helper launched on behalf of the followed app
         if ev.kind == "proc.fork" and ev.pid in self.tracked:
             child = ev.details.get("child_pid", -1)
             if child > 0:

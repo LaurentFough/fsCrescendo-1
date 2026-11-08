@@ -330,6 +330,14 @@ def cmd_watch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_serve(args: argparse.Namespace) -> int:
+    """Line-delimited JSON over stdin/stdout for a GUI (see PROTOCOL.md). Logs go to stderr only."""
+    from .serve import Server
+    for stream in (sys.stdin, sys.stdout):               #= a stray invalid byte must not crash the server
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    return Server(args.store).serve_forever()
+
+
 def cmd_runs(args: argparse.Namespace) -> int:
     prof = Profile.load(args.store, args.name)
     runs = list_runs(prof)
@@ -504,6 +512,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--limit", type=int, help="stop after this many shown events")
     p.add_argument("--json", action="store_true", help="one cresc.event/1 JSON object per line")
     p.set_defaults(func=cmd_watch)
+
+    p = sp.add_parser("serve", help="machine-readable JSON-lines interface on stdin/stdout, for a GUI (see PROTOCOL.md)")
+    add_common(p); p.set_defaults(func=cmd_serve)
 
     p = sp.add_parser("runs", help="list the runs of a profile")
     add_common(p); p.add_argument("name"); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_runs)

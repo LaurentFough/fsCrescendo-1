@@ -7,7 +7,7 @@ type: reference
 date-created: 2026-11-07
 date-modified: 2026-11-07
 date-published:
-source: "tools/cresc, version 0.2.0"
+source: "tools/cresc, version 0.3.0"
 domain: macos-security
 url:
 draft: true
@@ -56,6 +56,7 @@ Non-interactive pieces (what a GUI calls):
 | `cresc runs NAME`, `cresc compare NAME A B` | run history and what a profile change resolved |
 | `cresc output NAME [--run N] [--bytes B] [--json]` | the run's arguments, exit status, stdout and stderr (control characters escaped) |
 | `cresc loop NAME ...` | interactive run / grant / restart |
+| `cresc serve` | JSON-lines interface on stdin/stdout for a GUI, see [PROTOCOL.md](PROTOCOL.md) |
 | `cresc watch [FILE|-] [--app/--dir/--file/--pid ...]` | live or replayed event view from `eslogger` JSON (`--json`: `cresc.event/1`) |
 
 Program arguments go after a literal `--`. Data lives in `$CRESC_HOME` (default `~/.local/share/cresc`).
@@ -76,7 +77,7 @@ sudo eslogger exec fork exit open close write create rename unlink | \
 sudo eslogger open close write create rename unlink | python3 -m cresc watch --dir ~/Library/Application\ Support/x --json -
 ```
 
-- Scopes combine with OR: `--app NAME|PATH|SIGNING_ID` (children are followed, `--no-follow` disables that), `--dir PATH`
+- Scopes combine with OR: `--app NAME|PATH|SIGNING_ID` (children and processes macOS holds responsible to the app are followed, `--no-follow` disables that), `--dir PATH`
   (paths are matched on directory boundaries, so `/a/out2` is not under `/a/out`), `--file PATH`, `--pid N`.
 - `--kinds 'file.*,proc.exec'` filters by event kind; `--json` prints one `cresc.event/1` object per line; `--limit N` stops early.
 - Filtering is done by cresc after `eslogger` delivers an event (`eslogger` has no kernel-side filter), so a very busy system can drop
