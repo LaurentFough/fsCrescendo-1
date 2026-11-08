@@ -1,18 +1,20 @@
 import Foundation
 
-//= crescendo-esd.swift  version 0.1.0 (2026-11-08)
+//= crescendo-esd.swift  version 0.2.0 (2026-11-08)
 //= Crescendo event daemon: a small root LaunchDaemon that runs Apple's /usr/bin/eslogger ON REQUEST and streams its
 //= JSON lines to the one user it serves. It needs no Endpoint Security entitlement of its own (eslogger has Apple's).
 //= Socket protocol (client -> daemon, one line each; replies are single JSON lines starting {"esd":1,...}):
-//=     status                  -> ok, state idle|running, version, events
+//=     status                  -> ok, state idle|running, version, events, fda (true|false; absent = unknown)
 //=     start EVENT [EVENT ...] -> ok, then raw eslogger lines until `stop` or disconnect
 //=     stop                    -> ok, state idle
+//= `fda` is a probe: root can only open the TCC database when the daemon has Full Disk Access, so a failed open
+//= with EPERM/EACCES means the grant is missing (the app uses this to guide the user to System Settings).
 //= Safety: socket file is owned by --uid with mode 0600 AND every connection's uid is checked with getpeereid();
 //= event names are [a-z_]{1,40}, at most 40; one stream at a time; eslogger is killed when the client goes away.
 //= The daemon holds the Full Disk Access grant that eslogger needs (System Settings > Privacy & Security).
 //= Usage: crescendo-esd --uid N [--socket PATH] [--eslogger PATH]      (logs to stderr; launchd redirects it)
 
-let esdVersion = "0.1.0"
+let esdVersion = "0.2.0"
 let defaultSocket = "/var/run/com.loff.crescendo.esd.sock"
 
 func logLine(_ text: String) {
@@ -138,6 +140,13 @@ final class Streamer {
     }
 }
 
+//= true/false when the probe is conclusive, nil when the file is missing (unknown)
+func fullDiskAccess() -> Bool? {
+    let fd = open("/Library/Application Support/com.apple.TCC/TCC.db", O_RDONLY)
+    if fd >= 0 { close(fd); return true }
+    return (errno == EPERM || errno == EACCES) ? false : nil
+}
+
 //= ---- shared state ------------------------------------------------------------------------------------------
 let stateLock = NSLock()
 var current: Streamer?
@@ -172,7 +181,9 @@ func handle(fd: Int32) {
             switch command {
             case "status":
                 stateLock.lock(); let running = current != nil; let events = current?.events ?? []; stateLock.unlock()
-                conn.reply(["state": running ? "running" : "idle", "version": esdVersion, "events": events])
+                var info: [String: Any] = ["state": running ? "running" : "idle", "version": esdVersion, "events": events]
+                if let fda = fullDiskAccess() { info["fda"] = fda }
+                conn.reply(info)
             case "start":
                 let names = Array(words.dropFirst())
                 guard owned == nil else { conn.reply(["ok": false, "error": "already started on this connection"]); continue }

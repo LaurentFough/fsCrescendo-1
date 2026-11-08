@@ -7,7 +7,7 @@ type: reference
 date-created: 2026-11-08
 date-modified: 2026-11-08
 date-published:
-source: "daemon/crescendo-esd.swift 0.1.0, scripts/esd-install.sh 1.0.0, tools/cresc/cresc/esd.py 0.1.0"
+source: "daemon/crescendo-esd.swift 0.2.0, scripts/esd-install.sh 1.1.0, scripts/esd-sign.sh 1.0.0, tools/cresc/cresc/esd.py 0.1.0"
 domain: macos-security
 url:
 draft: true
@@ -42,14 +42,31 @@ make esd-status         # JSON: state idle|running, version
 make esd-log            # /var/log/crescendo-esd.log (eslogger errors, e.g. missing FDA)
 make esd-remove         # sudo: unload and delete
 ```
-Rebuilding changes the ad-hoc signature, which makes macOS forget the FDA grant. To keep it, sign with a stable local
-certificate: `make esd-install SIGN_IDENTITY="My Local Code Signing"` (create one in Keychain Access > Certificate
-Assistant; it never leaves your machine).
+### Keep the Full Disk Access grant across rebuilds
+macOS ties the grant to the daemon's signing requirement. An ad-hoc signature (the default) changes with every build,
+so the grant is lost. Sign with a real identity **as your user** (root cannot use your keychain, so signing happens in
+`make esd-sign` before `sudo`):
+```bash
+make esd-identities                     # list identities
+make esd-install SIGN_IDENTITY=auto     # first "Apple Development" identity (Xcode > Settings > Accounts)
+make esd-install SIGN_IDENTITY="Apple Development: Your Name (TEAMID)"   # or name / SHA-1 explicitly
+```
+The identity is only read from the environment; it is never written to the repository, so the project stays on
+"Sign to Run Locally". A free Apple ID's Apple Development certificate is enough (no provisioning profile is needed
+for a daemon without entitlements). A self-signed Keychain Access certificate works the same way.
+
+### First-run check in the app
+The Events tab asks the daemon for `status` (which includes an `fda` probe) and shows a banner:
+- **daemon not installed** -> "Install daemon..." runs the bundled installer with an administrator prompt (builds made
+  with `make build-lite` bundle it in `Contents/Resources/esd`); otherwise it offers to copy `make esd-install`;
+- **no Full Disk Access** -> "Open Full Disk Access..." opens System Settings at Privacy & Security > Full Disk Access
+  and reveals the daemon in Finder so you can drag it in;
+- ready -> the banner disappears. The check repeats whenever the app becomes active again.
 
 ## Protocol (Unix socket `/var/run/com.loff.crescendo.esd.sock`)
 | Client line | Reply |
 |---|---|
-| `status` | `{"esd":1,"ok":true,"state":"idle|running","version":"0.1.0","events":[...]}` |
+| `status` | `{"esd":1,"ok":true,"state":"idle|running","version":"0.2.0","events":[...],"fda":true|false}` (`fda` absent = unknown) |
 | `start EVENT [EVENT ...]` | `{"esd":1,"ok":true,"state":"running",...}` then raw `eslogger` JSON lines |
 | `stop` | `{"esd":1,"ok":true,"state":"idle"}` |
 Control replies always start with `{"esd"`. The engine (`cresc serve`) consumes them: `esd.status` returns

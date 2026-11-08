@@ -47,7 +47,7 @@ class FakeDaemon(threading.Thread):
                 cmd = raw.decode().strip()
                 self.commands.append(cmd)
                 if cmd == "status":
-                    self.reply(conn, ok=True, state="idle", version="test", events=[])
+                    self.reply(conn, ok=True, state="idle", version="test", events=[], fda=False)
                     return
                 if cmd.startswith("start"):
                     if self.refuse:
@@ -81,6 +81,7 @@ class EsdClientTests(unittest.TestCase):
         d = FakeDaemon(self.path)
         self.addCleanup(d.close)
         self.assertEqual(esd.status(self.path)["state"], "idle")
+        self.assertIs(esd.status(self.path)["fda"], False)           #= the FDA probe result reaches the caller
 
     def test_stream_skips_control_lines_and_sends_stop(self):
         d = FakeDaemon(self.path)
@@ -129,6 +130,7 @@ class EsdServeTests(ServeCase):
         info = c.call("esd.status", socket=path)
         self.assertTrue(info["available"])
         self.assertEqual(info["state"], "idle")
+        self.assertIs(info["fda"], False)
         w = c.call("watch.start", source={"socket": path, "events": ["exec", "open", "write"]}, kinds=["file.*"])
         kinds = [c.event("watch.event")["event"]["kind"] for _ in range(3)]
         self.assertEqual(kinds, ["file.open", "file.open", "file.write"])

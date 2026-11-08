@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.9.0  (2026-11-08)
+#= Makefile  -- version 1.10.0  (2026-11-08)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.9.0
+MAKEFILE_VERSION := 1.10.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -93,7 +93,7 @@ printf '%s make[$(MAKEFILE_VERSION)]: %s\n' "$$(date '+%Y-%m-%dT%H:%M:%S')" "$(1
 endef
 
 .PHONY: help version doctor list selftest \
-        build build-lite esd-build esd-install esd-remove esd-status esd-log build-xcode build-clt build-lib build-ext build-signed lint check test \
+        build build-lite esd-build esd-sign esd-identities esd-install esd-remove esd-status esd-log build-xcode build-clt build-lib build-ext build-signed lint check test \
         install run logs logs-sandbox logs-replay crashes \
         sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign eslogger \
         clean distclean \
@@ -187,10 +187,10 @@ build-xcode: require-xcode require-sign #= Full Xcode build; SIGN=local (default
 	@if [ "$$SIGN" = local ]; then $(MAKE) --no-print-directory local-sign; fi
 	@$(call say,build ok: $(APP_PATH))
 
-build-lite: require-xcode #= Build the LITE app (no Endpoint Security extension, no restricted entitlements): runs on a normal Mac
+build-lite: require-xcode esd-sign #= Build the LITE app (no Endpoint Security extension, no restricted entitlements): runs on a normal Mac
 	@$(call say,building $(APP_TARGET) [$(CONFIG)] unsigned, then packaging the lite app)
 	@$(XCB) -target $(APP_TARGET) $(QUIET) $(UNSIGNED_FLAGS) build
-	@sh scripts/lite-package.sh "$(APP_PATH)" "$(LITE_APP)" "$(LITE_ENT)" tools/cresc
+	@sh scripts/lite-package.sh "$(APP_PATH)" "$(LITE_APP)" "$(LITE_ENT)" tools/cresc "$(dir $(ESD_BIN))"
 	@$(call say,lite build ok: $(LITE_APP))
 	@$(call say,run it with: open "$(LITE_APP)")
 
@@ -200,8 +200,14 @@ esd-build: require-macos #= Compile the event daemon (crescendo-esd) with swiftc
 	@$(SWIFTC) -O -swift-version 5 -module-name crescendo_esd -sdk "$(SDK_PATH)" -target $(ARCH)-apple-macosx$(MIN_MACOS) -o "$(ESD_BIN)" $(ESD_SRC)
 	@$(call say,built $(ESD_BIN))
 
-esd-install: esd-build #= Install and load the event daemon as a root LaunchDaemon (sudo once; SIGN_IDENTITY=<name> keeps the FDA grant across rebuilds)
-	@sudo sh scripts/esd-install.sh install --uid "$$(id -u)" --binary "$(ESD_BIN)" --sign-identity "$(SIGN_IDENTITY)"
+esd-sign: esd-build #= Sign the daemon as YOU: SIGN_IDENTITY=- (ad-hoc, default) | auto (first Apple Development identity) | "<name>"
+	@SIGN_IDENTITY="$(SIGN_IDENTITY)" sh scripts/esd-sign.sh "$(ESD_BIN)"
+
+esd-identities: #= List code-signing identities usable for SIGN_IDENTITY (never written to the repo)
+	@security find-identity -v -p codesigning
+
+esd-install: esd-sign #= Install and load the event daemon as a root LaunchDaemon (sudo once). Stable FDA: SIGN_IDENTITY=auto
+	@sudo sh scripts/esd-install.sh install --uid "$$(id -u)" --binary "$(ESD_BIN)"
 
 esd-remove: #= Unload and delete the event daemon (sudo)
 	@sudo sh scripts/esd-install.sh remove

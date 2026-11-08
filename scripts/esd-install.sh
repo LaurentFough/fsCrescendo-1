@@ -1,16 +1,16 @@
 #!/bin/sh
-#= esd-install.sh  version 1.0.0 (2026-11-08)
+#= esd-install.sh  version 1.1.0 (2026-11-08)
 #= Installs / removes the Crescendo event daemon as a root LaunchDaemon (run with sudo; the Makefile does).
-#= Usage : esd-install.sh install --uid N --binary PATH [--sign-identity NAME]
+#= Usage : esd-install.sh install --uid N --binary PATH
 #=         esd-install.sh remove
-#= Effect: copies the binary to /Library/PrivilegedHelperTools/com.loff.crescendo.esd (root:wheel 755), ad-hoc signs it
-#=         (or with --sign-identity, which keeps the Full Disk Access grant across rebuilds), writes
+#= Effect: copies the binary to /Library/PrivilegedHelperTools/com.loff.crescendo.esd (root:wheel 755) KEEPING its
+#=         signature (sign it first as your user: scripts/esd-sign.sh; root cannot use your keychain), writes
 #=         /Library/LaunchDaemons/com.loff.crescendo.esd.plist and loads it with launchctl bootstrap.
 #=         The daemon is idle until the app asks it to start eslogger. Log: /var/log/crescendo-esd.log
 #= Exit  : 0 ok | 64 usage | 66 missing input | 70 failure | 77 not root
 set -eu
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 LABEL="com.loff.crescendo.esd"
 BIN="/Library/PrivilegedHelperTools/$LABEL"
 PLIST="/Library/LaunchDaemons/$LABEL.plist"
@@ -35,26 +35,26 @@ case "$ACTION" in
     log "also remove it from Full Disk Access in System Settings if you added it"
     ;;
   install)
-    UID_ARG=""; SRC=""; IDENTITY="-"
+    UID_ARG=""; SRC=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --uid) UID_ARG=${2:-}; shift 2 ;;
         --binary) SRC=${2:-}; shift 2 ;;
-        --sign-identity) IDENTITY=${2:-}; shift 2 ;;
         *) die "unknown argument: $1" 64 ;;
       esac
     done
     case "$UID_ARG" in ''|*[!0-9]*) die "--uid must be a number" 64 ;; esac
     [ "$UID_ARG" -gt 0 ] || die "--uid must not be root" 64
     [ -f "$SRC" ] || die "binary not found: $SRC (run: make esd-build)" 66
-    [ -n "$IDENTITY" ] || die "empty --sign-identity" 64
 
     unload
     mkdir -p /Library/PrivilegedHelperTools
     cp "$SRC" "$BIN"
     chown root:wheel "$BIN"; chmod 755 "$BIN"
-    codesign --force --sign "$IDENTITY" --identifier "$LABEL" --timestamp=none "$BIN" || die "codesign failed"
-    log "installed $BIN (signed with identity: $IDENTITY)"
+    codesign --verify --strict "$BIN" || die "the binary is not validly signed: run scripts/esd-sign.sh on it first" 66
+    kind=$(codesign -dv "$BIN" 2>&1 | sed -n "s/^Signature=//p;s/^TeamIdentifier=/team /p" | tr "\n" " ")
+    log "installed $BIN (signature: ${kind:-unknown})"
+    case "$kind" in *adhoc*) log "ad-hoc signature: Full Disk Access will be forgotten when you rebuild (see docs/event-daemon.md)";; esac
 
     cat > "$PLIST" <<PLISTEOF
 <?xml version="1.0" encoding="UTF-8"?>

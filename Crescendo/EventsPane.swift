@@ -34,6 +34,10 @@ final class EventsPane: NSObject, NSTableViewDataSource {
     private let statsLabel = NSTextField(labelWithString: "not watching")
     private let daemonLabel = NSTextField(labelWithString: "daemon: checking...")
     private var usingDaemon = false
+    private let bannerLabel = NSTextField(wrappingLabelWithString: "")
+    private let bannerButton = NSButton(title: "", target: nil, action: nil)
+    private let bannerBox = NSStackView()
+    private var bannerAction: (() -> Void)?
     private var pausedByUser = false
     static let daemonSocket = "/var/run/com.loff.crescendo.esd.sock"
     private let table = NSTableView()
@@ -130,10 +134,100 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         view.alignment = .leading
         view.spacing = 8
         view.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-        for row in [controlRow, filterRow, scroll] {
+        bannerBox.orientation = .horizontal
+        bannerBox.addArrangedSubview(bannerLabel)
+        bannerBox.addArrangedSubview(bannerButton)
+        bannerLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        bannerButton.target = self
+        bannerButton.action = #selector(bannerClicked)
+        bannerBox.isHidden = true
+        //= re-check whenever the user comes back to the app (e.g. after granting Full Disk Access in System Settings)
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil,
+                                               queue: .main) { [weak self] _ in self?.refreshDaemon() }
+        for row in [bannerBox, controlRow, filterRow, scroll] {
             view.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: view.widthAnchor, constant: -24).isActive = true
         }
+    }
+
+    //= ---- first-run checks ----------------------------------------------------------------------------------
+    //= Three states: daemon missing -> offer to install it; daemon without Full Disk Access -> open System Settings
+    //= at the right pane and reveal the binary to drag in; otherwise hide the banner.
+    private func bundledInstaller() -> (script: String, binary: String)? {
+        guard let dir = Bundle.main.resourceURL?.appendingPathComponent("esd").path else { return nil }
+        let script = dir + "/esd-install.sh", binary = dir + "/crescendo-esd"
+        let fm = FileManager.default
+        return fm.fileExists(atPath: script) && fm.fileExists(atPath: binary) ? (script, binary) : nil
+    }
+
+    private func showBanner(_ text: String, button: String, action: @escaping () -> Void) {
+        bannerLabel.stringValue = text
+        bannerButton.title = button
+        bannerButton.toolTip = text
+        bannerAction = action
+        bannerBox.isHidden = false
+    }
+
+    private func updateBanner(available: Bool, fda: Bool?) {
+        if !available {
+            if bundledInstaller() != nil {
+                showBanner("The event daemon is not installed. It lets Crescendo start and stop system event capture "
+                    + "without a Terminal. Installing asks for your administrator password once.",
+                           button: "Install daemon...") { [weak self] in self?.installDaemon() }
+            } else {
+                showBanner("The event daemon is not installed. Run `make esd-install` in the repository (this build does not "
+                    + "contain the installer).", button: "Copy command") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString("make esd-install", forType: .string)
+                }
+            }
+        } else if fda == false {
+            showBanner("The daemon needs Full Disk Access to run eslogger. Click the button, then add "
+                + "/Library/PrivilegedHelperTools/com.loff.crescendo.esd to the list (drag it in from the Finder window "
+                + "that opens) and switch it on.", button: "Open Full Disk Access...") { [weak self] in self?.openFullDiskAccess() }
+        } else {
+            bannerBox.isHidden = true
+        }
+    }
+
+    @objc private func bannerClicked() { bannerAction?() }
+
+    private func openFullDiskAccess() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+            NSWorkspace.shared.open(url)
+        }
+        let daemon = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/com.loff.crescendo.esd")
+        NSWorkspace.shared.activateFileViewerSelecting([daemon])
+    }
+
+    //= Runs the bundled installer with an administrator prompt. Paths travel as osascript arguments (never pasted into
+    //= the script text), and the script quotes them for the shell.
+    private func installDaemon() {
+        guard let installer = bundledInstaller() else { return }
+        let applescript = [
+            "on run argv",
+            "set cmd to \"/bin/sh \" & quoted form of (item 1 of argv) & \" install --uid \" & (item 2 of argv) & \" --binary \" & quoted form of (item 3 of argv)",
+            "do shell script cmd with administrator privileges",
+            "end run",
+        ]
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = applescript.flatMap { ["-e", $0] } + [installer.script, String(getuid()), installer.binary]
+        let errors = Pipe()
+        proc.standardError = errors
+        proc.standardOutput = Pipe()
+        proc.terminationHandler = { [weak self] finished in
+            let text = String(data: errors.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            DispatchQueue.main.async {
+                if finished.terminationStatus == 0 {
+                    self?.log?("event daemon installed")
+                } else {
+                    self?.log?("daemon install failed or was cancelled: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                }
+                self?.refreshDaemon()
+            }
+        }
+        do { try proc.run() } catch { log?("cannot run osascript: \(error.localizedDescription)") }
     }
 
     //= ---- watch control -------------------------------------------------------------------------------------
@@ -145,7 +239,8 @@ final class EventsPane: NSObject, NSTableViewDataSource {
             case let .success(info):
                 available = info["available"] as? Bool ?? false
                 let state = info["state"] as? String ?? "?"
-                self?.daemonLabel.stringValue = available ? "daemon: \(state)" : "daemon: not installed (make esd-install)"
+                self?.daemonLabel.stringValue = available ? "daemon: \(state)" : "daemon: not installed"
+                self?.updateBanner(available: available, fda: info["fda"] as? Bool)
             case .failure:
                 self?.daemonLabel.stringValue = "daemon: engine not ready"
             }
