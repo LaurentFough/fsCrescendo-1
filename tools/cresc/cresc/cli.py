@@ -8,6 +8,8 @@ import json
 import logging
 import os
 import sys
+import threading
+import time
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from . import SCHEMAS, __version__
@@ -15,7 +17,10 @@ from .classify import path_entries, risk
 from .denials import Group, fold, parse_lines
 from .rules import synthesize
 from .profile import Profile, ProfileError, default_store
-from .session import (SessionError, compare_groups, latest_run_number, list_runs, load_run, run_once, safe_text)
+from .scope import DEFAULT_MUTE, Filter, parse_scope
+from .session import (LogWatcher, SessionError, compare_groups, latest_run_number, list_runs, load_run, run_once,
+                      safe_text)
+from .watch import HEADER, Stats, denial_event, format_event, json_line, run_watch
 from .triage import Item, suggested_prefixes, summary, triage
 
 log = logging.getLogger("cresc")
@@ -271,6 +276,60 @@ def cmd_output(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_watch(args: argparse.Namespace) -> int:
+    """Event view from eslogger JSON (file or pipe), scoped and optionally merged with Sandbox denials.
+    Only Apple's eslogger needs root:  sudo eslogger exec fork exit open close write create rename unlink | cresc watch -"""
+    scopes = []
+    try:
+        for kind, values in (("app", args.app), ("dir", args.dir), ("file", args.scope_file), ("pid", args.pid)):
+            scopes += [parse_scope(kind, v) for v in values]
+    except ValueError as exc:
+        raise CliError(str(exc), 64)
+    mute = [] if args.no_mute else list(DEFAULT_MUTE) + list(args.mute)
+    flt = Filter(scopes, follow=not args.no_follow, mute=mute, kinds=[k.strip() for k in (args.kinds or "").split(",") if k.strip()])
+    lock = threading.Lock()
+
+    def emit(ev) -> None:
+        with lock:
+            print(json_line(ev) if args.json else format_event(ev), flush=True)
+
+    watcher = None
+    if args.denials:
+        def on_denial(d) -> None:
+            emit(denial_event(d.process, d.pid, d.op, d.target, d.ts))
+        watcher = LogWatcher(args.denials, on_denial=on_denial)
+        watcher.start()
+        watcher.started.wait(5)
+        if watcher.error:
+            raise CliError("cannot start the denial watcher: %s" % watcher.error, 65)
+    stats = Stats()
+    stream = None
+    try:
+        if args.source in (None, "-"):
+            lines = sys.stdin
+        else:
+            try:
+                stream = open(args.source, encoding="utf-8", errors="replace")
+            except OSError as exc:
+                raise CliError("cannot read %s: %s" % (args.source, exc), 66)
+            lines = stream
+        if not args.json:
+            print(HEADER, flush=True)
+        run_watch(lines, flt, emit, stats, args.limit)
+        if watcher:
+            time.sleep(args.settle)                #= denials are logged asynchronously; give the last ones a moment
+    finally:
+        if stream:
+            stream.close()
+        if watcher:
+            watcher.stop()
+        top = ", ".join("%s %d" % kv for kv in list(stats.to_dict()["by_kind"].items())[:5])
+        print("watch: %d event(s) read, %d shown, %d non-event line(s) skipped, %d dropped (gaps in the event sequence)%s"
+              % (stats.read, stats.shown, stats.skipped, stats.dropped, ("; most frequent: " + top) if top else ""),
+              file=sys.stderr)
+    return 0
+
+
 def cmd_runs(args: argparse.Namespace) -> int:
     prof = Profile.load(args.store, args.name)
     runs = list_runs(prof)
@@ -426,6 +485,25 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(p); p.add_argument("name"); p.add_argument("--run", default="last", help="run number or 'last' (default)")
     p.add_argument("--bytes", type=int, default=4000, help="how much of each stream to show (default 4000)")
     p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_output)
+
+    p = sp.add_parser("watch", help="event view from eslogger JSON, scoped to apps / folders / files / pids")
+    add_common(p)
+    p.add_argument("source", nargs="?", help="eslogger JSON lines: a file, or - for stdin (default)")
+    p.add_argument("--app", action="append", default=[], metavar="NAME|PATH|SIGNING_ID",
+                   help="show this program and its children (repeatable); a path matches everything under it")
+    p.add_argument("--dir", action="append", default=[], metavar="PATH", help="show events touching anything under this directory")
+    p.add_argument("--file", action="append", default=[], dest="scope_file", metavar="PATH", help="show events touching this exact file")
+    p.add_argument("--pid", action="append", default=[], metavar="N", help="show this process and its children (until it exits)")
+    p.add_argument("--no-follow", action="store_true", help="do not follow child processes of --app / --pid")
+    p.add_argument("--mute", action="append", default=[], metavar="NAME", help="also hide this process name (repeatable)")
+    p.add_argument("--no-mute", action="store_true", help="show the noisy system processes that are hidden by default")
+    p.add_argument("--kinds", metavar="PATTERNS", help="only these kinds, e.g. 'file.*,proc.exec' (shell-style patterns)")
+    p.add_argument("--denials", action="append", default=[], metavar="NAME",
+                   help="also show Sandbox denials of this process name (repeatable)")
+    p.add_argument("--settle", type=float, default=2.0, help="seconds to keep listening for denials after the input ends (default 2)")
+    p.add_argument("--limit", type=int, help="stop after this many shown events")
+    p.add_argument("--json", action="store_true", help="one cresc.event/1 JSON object per line")
+    p.set_defaults(func=cmd_watch)
 
     p = sp.add_parser("runs", help="list the runs of a profile")
     add_common(p); p.add_argument("name"); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_runs)

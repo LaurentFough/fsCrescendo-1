@@ -10,4 +10,5 @@ SCHEMAS = {
     "triage": "cresc.triage/1",
     "profile": "cresc.profile/1",
     "run": "cresc.run/1",
+    "event": "cresc.event/1",
 }

@@ -56,8 +56,35 @@ Non-interactive pieces (what a GUI calls):
 | `cresc runs NAME`, `cresc compare NAME A B` | run history and what a profile change resolved |
 | `cresc output NAME [--run N] [--bytes B] [--json]` | the run's arguments, exit status, stdout and stderr (control characters escaped) |
 | `cresc loop NAME ...` | interactive run / grant / restart |
+| `cresc watch [FILE|-] [--app/--dir/--file/--pid ...]` | live or replayed event view from `eslogger` JSON (`--json`: `cresc.event/1`) |
 
 Program arguments go after a literal `--`. Data lives in `$CRESC_HOME` (default `~/.local/share/cresc`).
+
+## Watching events (`cresc watch`)
+
+Shows what programs do on the machine, from Apple's own `eslogger` (macOS 13+). Only `eslogger` runs as root; cresc just reads
+its JSON from a pipe or a file, so cresc itself never needs privileges and never needs Apple's Endpoint Security entitlement.
+The terminal running `eslogger` needs Full Disk Access.
+
+```bash
+# everything visible (noisy Spotlight/logging daemons are hidden by default; --no-mute shows them)
+sudo eslogger exec fork exit open close write create rename unlink | python3 -m cresc watch -
+
+# narrow to one app and its children, a folder, a file, or a pid; denials from the sandbox join the same timeline
+sudo eslogger exec fork exit open close write create rename unlink | \
+  python3 -m cresc watch --app thebinary64 --denials thebinary64 -
+sudo eslogger open close write create rename unlink | python3 -m cresc watch --dir ~/Library/Application\ Support/x --json -
+```
+
+- Scopes combine with OR: `--app NAME|PATH|SIGNING_ID` (children are followed, `--no-follow` disables that), `--dir PATH`
+  (paths are matched on directory boundaries, so `/a/out2` is not under `/a/out`), `--file PATH`, `--pid N`.
+- `--kinds 'file.*,proc.exec'` filters by event kind; `--json` prints one `cresc.event/1` object per line; `--limit N` stops early.
+- Filtering is done by cresc after `eslogger` delivers an event (`eslogger` has no kernel-side filter), so a very busy system can drop
+  events: gaps in the global sequence number are counted and reported when the stream ends.
+- Everything shown comes from files and programs you do not trust and is escaped before printing.
+- Pid tracking depends on the fork/exec/exit events it sees; pids are reused, so a followed pid is forgotten when it exits.
+- The test fixture (`tests/fixtures/eslogger-sample.jsonl`) is **synthetic**, built from the documented Endpoint Security JSON layout.
+  Replace it with a real capture to validate the parser on your macOS version.
 
 ## Safety rules built in
 
