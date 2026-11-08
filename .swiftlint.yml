@@ -1,0 +1,11 @@
+# = SwiftLint configuration (used by `make lint` and the Xcode Run Script phase)
+included:
+  - Crescendo
+  - CrescendoExtension
+  - libCrescendo
+excluded:
+  - build
+  - Crescendo/ThirdParty
+  - libCrescendo/EndpointModule
+  - tools
+  - daemon
