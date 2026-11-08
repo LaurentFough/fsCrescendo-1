@@ -78,29 +78,21 @@ class ViewController: NSViewController {
         PFMoveToApplicationsFolderIfNecessary()
     }
 
-    lazy var extensionBundle: Bundle = {
+    //= The embedded Endpoint Security extension, or nil in the "lite" build (make build-lite), which ships
+    //= without it so that it needs no Apple-approved entitlement and runs on an unmodified Mac.
+    lazy var extensionBundle: Bundle? = {
         let extensionsDirectoryURL = URL(fileURLWithPath: "Contents/Library/SystemExtensions",
                                          relativeTo: Bundle.main.bundleURL)
-        let extensionURLs: [URL]
-        do {
-            extensionURLs = try FileManager.default.contentsOfDirectory(at: extensionsDirectoryURL,
-                                                                        includingPropertiesForKeys: nil,
-                                                                        options: .skipsHiddenFiles)
-        } catch {
-            // swiftlint:disable:next line_length
-            fatalError("Failed to get the contents of \(extensionsDirectoryURL.absoluteString): \(error.localizedDescription)")
+        guard let extensionURLs = try? FileManager.default.contentsOfDirectory(at: extensionsDirectoryURL,
+                                                                               includingPropertiesForKeys: nil,
+                                                                               options: .skipsHiddenFiles),
+            let extensionURL = extensionURLs.first(where: { $0.pathExtension == "systemextension" }) else {
+            return nil
         }
-
-        guard let extensionURL = extensionURLs.first else {
-            showError(error: "Failed to find system extension")
-            fatalError("Failed to find system extension")
-        }
-
-        guard let extensionBundle = Bundle(url: extensionURL) else {
-            fatalError("Failed to create a bundle with URL \(extensionURL.absoluteString)")
-        }
-        return extensionBundle
+        return Bundle(url: extensionURL)
     }()
+
+    var esAvailable: Bool { extensionBundle != nil }
 
     // Helper for reloading events while maintaining selection in tableview
     // If a caller sets force to true, there will be no time delay on a refresh
@@ -204,11 +196,14 @@ class ViewController: NSViewController {
 
     // Start button handler
     @IBAction func startListener(_: Any) {
-        status = .indeterminate
-        guard let extensionIdentifier = extensionBundle.bundleIdentifier else {
+        guard let extensionIdentifier = extensionBundle?.bundleIdentifier else {
+            //= lite build (or damaged bundle): no Endpoint Security extension to start
             status = .stopped
+            showError(error: "This build has no Endpoint Security extension (lite build).\n"
+                + "Events come from the cresc engine instead; see docs/lite-build.md.")
             return
         }
+        status = .indeterminate
         // swiftlint:disable:next line_length
         let activationRequest = OSSystemExtensionRequest.activationRequest(forExtensionWithIdentifier: extensionIdentifier,
                                                                            queue: .main)
@@ -367,8 +362,8 @@ class ViewController: NSViewController {
 
     // Handler for unloading the system extension. This should only be used for extreme situations.
     @IBAction func unloadSystemExtension(sender _: NSMenuItem) {
-        guard let extensionIdentifier = extensionBundle.bundleIdentifier else {
-            NSLog("Unable to get bundle identifier.")
+        guard let extensionIdentifier = extensionBundle?.bundleIdentifier else {
+            NSLog("No system extension in this build; nothing to unload.")
             return
         }
         // swiftlint:disable:next line_length
@@ -394,6 +389,10 @@ class ViewController: NSViewController {
 
     // call into extension IPC interface
     func registerWithProvider() {
+        guard let extensionBundle = extensionBundle else {
+            status = .stopped
+            return
+        }
         IPCConnection.shared.register(withExtension: extensionBundle, delegate: self) { success in
             DispatchQueue.main.async {
                 self.status = (success ? .running : .stopped)

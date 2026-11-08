@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.7.0  (2026-11-07)
+#= Makefile  -- version 1.8.0  (2026-11-08)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.7.0
+MAKEFILE_VERSION := 1.8.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -35,6 +35,8 @@ SIGN        ?= local
 APP_ENT     ?= Crescendo/CrescendoApp.entitlements
 EXT_ENT     ?= CrescendoExtension/CrescendoExtension.entitlements
 FORCE       ?= 0
+LITE_ENT    ?= Crescendo/CrescendoLite.entitlements
+LITE_APP    := $(CURDIR)/$(BUILD_DIR)/lite/$(APP_TARGET).app
 MIN_MACOS   ?= 13.0
 SWIFTC      ?= xcrun swiftc
 CONFIRM     ?= 0
@@ -88,7 +90,7 @@ printf '%s make[$(MAKEFILE_VERSION)]: %s\n' "$$(date '+%Y-%m-%dT%H:%M:%S')" "$(1
 endef
 
 .PHONY: help version doctor list selftest \
-        build build-xcode build-clt build-lib build-ext build-signed lint check test \
+        build build-lite build-xcode build-clt build-lib build-ext build-signed lint check test \
         install run logs logs-sandbox logs-replay crashes \
         sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign eslogger \
         clean distclean \
@@ -181,6 +183,13 @@ build-xcode: require-xcode require-sign #= Full Xcode build; SIGN=local (default
 	@$(XCB) -target $(APP_TARGET) $(QUIET) $(SIGN_FLAGS) build
 	@if [ "$$SIGN" = local ]; then $(MAKE) --no-print-directory local-sign; fi
 	@$(call say,build ok: $(APP_PATH))
+
+build-lite: require-xcode #= Build the LITE app (no Endpoint Security extension, no restricted entitlements): runs on a normal Mac
+	@$(call say,building $(APP_TARGET) [$(CONFIG)] unsigned, then packaging the lite app)
+	@$(XCB) -target $(APP_TARGET) $(QUIET) $(UNSIGNED_FLAGS) build
+	@sh scripts/lite-package.sh "$(APP_PATH)" "$(LITE_APP)" "$(LITE_ENT)"
+	@$(call say,lite build ok: $(LITE_APP))
+	@$(call say,run it with: open "$(LITE_APP)")
 
 build-clt: require-clt #= Command Line Tools compile check ONLY: no .app, no storyboards, no signing
 	@$(call say,Command Line Tools mode: compile check only - no .app is produced)
