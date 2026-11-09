@@ -141,5 +141,8 @@ The **Graph** segment draws the file activity natively, in two layouts (chosen i
 - **Scale (default filters, each can be switched off)**: *Busiest 200 paths* (choices 50 / 100 / 200 / 500 / 1000 / all; folders on the way are added),
   *Only my processes* (uid; or all users, or only root), *Hide Apple system processes* (programs signed by the operating system itself, i.e. platform
   binaries). The status line says how many paths and rows are hidden, so nothing disappears silently.
-- Click a node to see its activity summary in the inspector; hover for counts; **Fit** / **100%** / pinch to zoom; **Save Image...** writes a PNG.
+- Click a node to see its activity summary in the inspector; hover for counts; **Save Image...** writes a PNG.
+- **Navigation**: the sunburst has a fixed size with its centre exactly in the middle (deeper trees get thinner rings) and the picture is always centred in
+  the window. Drag to pan (a click without moving selects); pinch, or Command/Option + scroll, zooms at the pointer; double-click zooms in there
+  (Option: out). Keys: arrows pan, `+` / `-` zoom, `0` actual size, `F` fit, `C` centre. Buttons: `-` `+` Fit 100% Center.
 - The graph is built from the same filtered rows as the list (the Filter panel and hidden folders apply first).

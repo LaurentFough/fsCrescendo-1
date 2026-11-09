@@ -1,6 +1,6 @@
 import Cocoa
 
-//= FilesGraph.swift  version 0.1.0 (2026-11-09)
+//= FilesGraph.swift  version 0.2.0 (2026-11-09)
 //= Graph view of file activity, drawn natively, with two layouts:
 //=   Horizontal tree  root on the left, branches to the right; files carry a badge with their change count, deleted files a red cross.
 //=   Sunburst         concentric rings, one per folder level; the angle of an arc is the share of changes below that path.
@@ -145,6 +145,18 @@ enum GraphModel {
     }
 }
 
+//= keeps the document view centred in the visible area whenever it is smaller than the area (zoomed out, or a large window)
+final class CenteringClipView: NSClipView {
+    override func constrainBoundsRect(_ proposedBounds: NSRect) -> NSRect {
+        var rect = super.constrainBoundsRect(proposedBounds)
+        if let document = documentView {
+            if rect.width > document.frame.width { rect.origin.x = (document.frame.width - rect.width) / 2 }
+            if rect.height > document.frame.height { rect.origin.y = (document.frame.height - rect.height) / 2 }
+        }
+        return rect
+    }
+}
+
 //= the drawing surface (flipped: origin at the top left)
 final class GraphCanvas: NSView {
     override var isFlipped: Bool { true }
@@ -161,7 +173,8 @@ final class GraphCanvas: NSView {
     private let smallFont = NSFont.systemFont(ofSize: 10)
     private let rowHeight: CGFloat = 26
     private let margin: CGFloat = 24
-    private let ringWidth: CGFloat = 70
+    private var ringWidth: CGFloat = 70
+    private let sunburstRadius: CGFloat = 480        //= fixed: the picture does not grow or move when the tree gets deeper
     private let centerRadius: CGFloat = 46
     private var center = CGPoint.zero
     private var trackingAreaRef: NSTrackingArea?
@@ -240,8 +253,10 @@ final class GraphCanvas: NSView {
             }
         }
         spread(root)
+        //= the canvas has a constant size and the centre sits exactly in its middle; deeper trees get thinner rings instead
         let maxDepth = nodes.map { $0.depth }.max() ?? 0
-        let radius = centerRadius + CGFloat(maxDepth) * ringWidth + margin
+        ringWidth = max(24, min(70, (sunburstRadius - centerRadius) / CGFloat(max(1, maxDepth))))
+        let radius = sunburstRadius + margin
         center = CGPoint(x: radius, y: radius)
         return CGSize(width: radius * 2, height: radius * 2)
     }
@@ -380,11 +395,111 @@ final class GraphCanvas: NSView {
         }
     }
 
+    //= ---- mouse and keyboard navigation ---------------------------------------------------------------------
+    override var acceptsFirstResponder: Bool { true }
+    private var dragMoved = false
+    private var downPoint = CGPoint.zero
+
     override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        dragMoved = false
+        downPoint = event.locationInWindow
+        if event.clickCount == 2 {                       //= double-click zooms in at the pointer (Option: out)
+            let factor: CGFloat = event.modifierFlags.contains(.option) ? 0.7 : 1.6
+            zoom(by: factor, at: convert(event.locationInWindow, from: nil))
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if !dragMoved {
+            let dx = event.locationInWindow.x - downPoint.x, dy = event.locationInWindow.y - downPoint.y
+            if dx * dx + dy * dy < 9 { return }          //= a click, not a drag
+            dragMoved = true
+            NSCursor.closedHand.push()
+        }
+        let magnification = max(0.01, enclosingScrollView?.magnification ?? 1)
+        pan(dx: -event.deltaX / magnification, dy: -event.deltaY / magnification)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if dragMoved {
+            NSCursor.pop()
+            dragMoved = false
+            return
+        }
+        guard event.clickCount == 1 else { return }
         let hit = node(at: convert(event.locationInWindow, from: nil))
         selected = hit
         needsDisplay = true
         onSelect?(hit)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if event.modifierFlags.contains(.command) || event.modifierFlags.contains(.option) {
+            let delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY : event.scrollingDeltaY * 8
+            zoom(by: max(0.5, min(2, 1 + delta * 0.01)), at: convert(event.locationInWindow, from: nil))
+        } else {
+            super.scrollWheel(with: event)               //= plain scrolling pans (the scroll view handles it)
+        }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        let step: CGFloat = 120 / max(0.01, enclosingScrollView?.magnification ?? 1)
+        switch event.keyCode {
+        case 123: pan(dx: -step, dy: 0)
+        case 124: pan(dx: step, dy: 0)
+        case 125: pan(dx: 0, dy: step)
+        case 126: pan(dx: 0, dy: -step)
+        default:
+            switch event.charactersIgnoringModifiers {
+            case "+", "=": zoom(by: 1.25)
+            case "-": zoom(by: 0.8)
+            case "0": resetZoom()
+            case "f", "F": fit()
+            case "c", "C": centerView()
+            default: super.keyDown(with: event)
+            }
+        }
+    }
+
+    func pan(dx: CGFloat, dy: CGFloat) {
+        guard let scroll = enclosingScrollView else { return }
+        let clip = scroll.contentView
+        clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: CGPoint(x: clip.bounds.origin.x + dx, y: clip.bounds.origin.y + dy), size: clip.bounds.size)).origin)
+        scroll.reflectScrolledClipView(clip)
+    }
+
+    func zoom(by factor: CGFloat, at point: CGPoint? = nil) {
+        guard let scroll = enclosingScrollView else { return }
+        let target = max(scroll.minMagnification, min(scroll.maxMagnification, scroll.magnification * factor))
+        let anchor = point ?? CGPoint(x: scroll.documentVisibleRect.midX, y: scroll.documentVisibleRect.midY)
+        scroll.setMagnification(target, centeredAt: anchor)
+    }
+
+    func resetZoom() {
+        guard let scroll = enclosingScrollView else { return }
+        scroll.setMagnification(1, centeredAt: CGPoint(x: scroll.documentVisibleRect.midX, y: scroll.documentVisibleRect.midY))
+    }
+
+    //= zoom so that the whole picture fits, then centre it
+    func fit() {
+        guard let scroll = enclosingScrollView, frame.width > 0, frame.height > 0 else { return }
+        let content = scroll.contentSize
+        scroll.magnification = max(scroll.minMagnification, min(scroll.maxMagnification, min(content.width / frame.width, content.height / frame.height, 1)))
+        centerView()
+    }
+
+    //= sunburst: the middle of the picture; tree: the root, vertically centred
+    func centerView() {
+        guard let scroll = enclosingScrollView else { return }
+        let visible = scroll.documentVisibleRect
+        var origin = CGPoint(x: (frame.width - visible.width) / 2, y: (frame.height - visible.height) / 2)
+        if layout == .tree, let root = root {
+            origin = CGPoint(x: 0, y: root.y - visible.height / 2)
+        }
+        let clip = scroll.contentView
+        clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: origin, size: clip.bounds.size)).origin)
+        scroll.reflectScrolledClipView(clip)
     }
 
     override func updateTrackingAreas() {
@@ -421,6 +536,7 @@ final class FilesGraphView: NSObject {
     private let infoLabel = NSTextField(labelWithString: "")
     private var lastRows = [FileRow]()
     private var firstFit = true
+    private var lastLayout = GraphLayout.tree
     private static let caps = [50, 100, 200, 500, 1000, 0]
 
     override init() {
@@ -445,16 +561,22 @@ final class FilesGraphView: NSObject {
         appleCheck.target = self
         appleCheck.action = #selector(optionsChanged)
         let fit = NSButton(title: "Fit", target: self, action: #selector(fitToWindow))
-        fit.toolTip = "Zoom so the whole graph fits (pinch or Command-scroll zooms freely)"
+        fit.toolTip = "Zoom so the whole graph fits (key: F)"
         let actual = NSButton(title: "100%", target: self, action: #selector(actualSize))
-        actual.toolTip = "Zoom to actual size"
+        actual.toolTip = "Zoom to actual size (key: 0)"
+        let zoomOut = NSButton(title: "-", target: self, action: #selector(zoomOutClicked))
+        zoomOut.toolTip = "Zoom out (key: -). Also: pinch, or Command/Option + scroll, or double-click with Option."
+        let zoomIn = NSButton(title: "+", target: self, action: #selector(zoomInClicked))
+        zoomIn.toolTip = "Zoom in (key: +). Also: pinch, or Command/Option + scroll, or double-click."
+        let centre = NSButton(title: "Center", target: self, action: #selector(centerClicked))
+        centre.toolTip = "Bring the middle of the picture (tree: the root) back to the middle of the window (key: C). Drag to pan, arrow keys also pan."
         let save = NSButton(title: "Save Image...", target: self, action: #selector(saveImage))
         save.toolTip = "Save the graph as a PNG picture"
         infoLabel.textColor = .secondaryLabelColor
         infoLabel.lineBreakMode = .byTruncatingTail
         infoLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         infoLabel.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .horizontal)
-        let bar = NSStackView(views: [layoutPopup, capPopup, userPopup, appleCheck, fit, actual, save])
+        let bar = NSStackView(views: [layoutPopup, capPopup, userPopup, appleCheck, zoomOut, zoomIn, fit, actual, centre, save])
         bar.orientation = .horizontal
         let status = NSStackView(views: [infoLabel])
 
@@ -463,6 +585,7 @@ final class FilesGraphView: NSObject {
             guard let source = node.source, let icon = self?.iconFor?(source) else { return NSImage() }
             return icon
         }
+        scroll.contentView = CenteringClipView()
         scroll.documentView = canvas
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
@@ -491,6 +614,7 @@ final class FilesGraphView: NSObject {
         lastRows = rows
         let opts = options
         let result = GraphModel.build(rows, opts)
+        if opts.layout != lastLayout { lastLayout = opts.layout; firstFit = true }
         let keep = canvas.selected?.path
         canvas.layout = opts.layout
         canvas.root = result.root
@@ -516,15 +640,11 @@ final class FilesGraphView: NSObject {
     }
 
     //= ---- zoom and export -----------------------------------------------------------------------------------
-    @objc private func fitToWindow() {
-        let content = scroll.contentSize
-        let size = canvas.frame.size
-        guard size.width > 0, size.height > 0 else { return }
-        scroll.magnification = max(scroll.minMagnification, min(scroll.maxMagnification, min(content.width / size.width, content.height / size.height, 1)))
-        canvas.scroll(.zero)
-    }
-
-    @objc private func actualSize() { scroll.magnification = 1 }
+    @objc private func fitToWindow() { canvas.fit() }
+    @objc private func actualSize() { canvas.resetZoom() }
+    @objc private func zoomInClicked() { canvas.zoom(by: 1.25) }
+    @objc private func zoomOutClicked() { canvas.zoom(by: 0.8) }
+    @objc private func centerClicked() { canvas.centerView() }
 
     @objc private func saveImage() {
         guard let rep = canvas.bitmapImageRepForCachingDisplay(in: canvas.bounds) else { return }
