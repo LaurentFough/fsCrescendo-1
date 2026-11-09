@@ -49,7 +49,7 @@ or plain text, command-line tool for automation, graph visualisation of file act
 
 ## FSMonitor-style polish for the Files view (owner request 2026-11-09: "style it more like FSMonitor when we can")
 - [x] File-type icons in the Path column; a large file icon and type name at the top of the inspector.
-- [ ] Hide / reveal actions in the row menu: Reveal in Finder, Open in Terminal, Quick Look, Copy path (FSMonitor offers these).
+- [x] Row menu: Reveal in Finder, Copy Path, show/hide process, show/hide folder. [ ] Still open: Open in Terminal, Quick Look.
 - [ ] "Today, 22:38" style date column option (ours shows local time with milliseconds).
 - [ ] Row tinting for moved and deleted rows; selection of both halves of a rename.
 - [ ] Drag a path from a row into a filter field or another app.

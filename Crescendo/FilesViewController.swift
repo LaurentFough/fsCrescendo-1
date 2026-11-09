@@ -1,7 +1,7 @@
 import Cocoa
 import UniformTypeIdentifiers
 
-//= FilesViewController.swift  version 0.2.0 (2026-11-09)
+//= FilesViewController.swift  version 0.3.0 (2026-11-09)
 //= File activity in the style of a file-system monitor, shown inside the main window when the "File" segment is selected.
 //= Source: the cresc engine (`watch.start` with view "files"), fed by the event daemon (eslogger). Rows are
 //= cresc.filechange/1: created, deleted, modified, attributes, moved from / moved to, meta.
@@ -94,13 +94,21 @@ enum FileFormat {
 //= the list needs to react to the space bar (pause / resume)
 final class FilesTable: NSTableView {
     var onSpace: (() -> Void)?
+    var onHide: (() -> Void)?       //= Delete: hide the folder of the selected rows
+    var onRestore: (() -> Void)?    //= Command-Delete: bring back the folder hidden last
 
     override func keyDown(with event: NSEvent) {
-        if event.charactersIgnoringModifiers == " " { onSpace?() } else { super.keyDown(with: event) }
+        if event.charactersIgnoringModifiers == " " {
+            onSpace?()
+        } else if event.keyCode == 51 || event.keyCode == 117 { //= Delete / forward delete
+            if event.modifierFlags.contains(.command) { onRestore?() } else { onHide?() }
+        } else {
+            super.keyDown(with: event)
+        }
     }
 }
 
-final class FilesViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
+final class FilesViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
     //= called when capturing starts or stops, so the window's own Start/Stop buttons can follow
     var onCapturingChanged: ((Bool) -> Void)?
     //= asked to open the setup help (event daemon installation, Full Disk Access)
@@ -118,6 +126,10 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     private var search = ""
     private var reloadPending = false
     private var nextRowId = 0
+    private let filterPanel = FilterPanel()
+    private var filter = FileFilter()
+    private var hiddenFolders = [String]()
+    private let filterButton = NSButton(checkboxWithTitle: "Filter", target: nil, action: nil)
     //= asked before scrolling to the newest row; the main window answers with its Auto-scroll checkbox
     var autoscroll: () -> Bool = { true }
     private static var iconCache = [String: NSImage]()
@@ -199,12 +211,18 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         inspectorButton.target = self
         inspectorButton.action = #selector(toggleInspector)
         inspectorButton.toolTip = "Show or hide the details of the selected change"
+        filterButton.target = self
+        filterButton.action = #selector(toggleFilter)
+        filterButton.toolTip = "Show the filter rules: match by path, process, category, pid, owner and more"
+        filterPanel.view.isHidden = true
+        filterPanel.onChange = { [weak self] in self?.filterChanged() }
+        filterPanel.onRestoreHidden = { [weak self] in self?.restoreHidden(all: true) }
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         statusLabel.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .horizontal)
         //= the status text changes width on every refresh, so it goes LAST: nothing to its left can move under the pointer
-        let bar = NSStackView(views: [modeControl, cleanupPopup, pauseButton, inspectorButton, statusLabel])
+        let bar = NSStackView(views: [modeControl, cleanupPopup, pauseButton, filterButton, inspectorButton, statusLabel])
         bar.orientation = .horizontal
 
         //= list
@@ -222,6 +240,11 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         table.usesAlternatingRowBackgroundColors = true
         table.rowHeight = 20
         table.onSpace = { [weak self] in self?.togglePause() }
+        table.onHide = { [weak self] in self?.hideSelectedFolders() }
+        table.onRestore = { [weak self] in self?.restoreHidden(all: false) }
+        let rowMenu = NSMenu()
+        rowMenu.delegate = self
+        table.menu = rowMenu
         listScroll.documentView = table
         listScroll.hasVerticalScroller = true
         listScroll.borderType = .noBorder
@@ -268,7 +291,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         split.setHoldingPriority(NSLayoutConstraint.Priority(250), forSubviewAt: 0)
         split.setHoldingPriority(NSLayoutConstraint.Priority(260), forSubviewAt: 1)
 
-        let root = NSStackView(views: [bannerBox, bar, split, legend()])
+        let root = NSStackView(views: [bannerBox, bar, filterPanel.view, split, legend()])
         root.orientation = .vertical
         root.alignment = .leading
         root.spacing = 8
@@ -279,7 +302,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
             root.leadingAnchor.constraint(equalTo: view.leadingAnchor), root.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             root.topAnchor.constraint(equalTo: view.topAnchor), root.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        for sub in [bannerBox, bar, split] {
+        for sub in [bannerBox, bar, filterPanel.view, split] {
             sub.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -40).isActive = true
         }
         split.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .vertical)
@@ -500,8 +523,139 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     private func matches(_ row: FileRow) -> Bool {
+        if row.category != "meta" {                          //= start/stop markers always stay visible
+            if !filter.matches(row) { return false }
+            if isHidden(row.path) { return false }
+        }
         if search.isEmpty { return true }
         return [row.path, row.process, row.eventType, row.source, String(row.pid)].contains { $0.lowercased().contains(search) }
+    }
+
+    private func isHidden(_ path: String) -> Bool {
+        hiddenFolders.contains { path == $0 || path.hasPrefix($0 + "/") }
+    }
+
+    //= ---- filter, hidden folders, row menu ------------------------------------------------------------------
+    @objc private func toggleFilter() {
+        filterPanel.view.isHidden = filterButton.state != .on
+    }
+
+    private func filterChanged() {
+        filter = filterPanel.filter()
+        rebuildVisible()
+        reloadViews(scrollToEnd: false)
+        updateFilterStatus()
+    }
+
+    private func updateFilterStatus() {
+        filterButton.title = filter.isActive ? "Filter (on)" : "Filter"
+    }
+
+    private func folder(of row: FileRow) -> String {
+        if ((row.mode ?? 0) & 0o170000) == 0o040000 { return row.path }
+        return (row.path as NSString).deletingLastPathComponent
+    }
+
+    //= Delete hides every change under the folder of each selected row (a folder row hides itself)
+    private func hideSelectedFolders() {
+        var added = 0
+        for index in table.selectedRowIndexes where index < visible.count {
+            let dir = folder(of: visible[index])
+            if !dir.isEmpty, dir != "/", !hiddenFolders.contains(dir) { hiddenFolders.append(dir); added += 1 }
+        }
+        guard added > 0 else { return }
+        applyHidden()
+        setStatus("hid \(added) folder(s) - Command-Delete brings the last one back")
+    }
+
+    private func hideFolder(_ dir: String) {
+        guard !dir.isEmpty, dir != "/", !hiddenFolders.contains(dir) else { return }
+        hiddenFolders.append(dir)
+        applyHidden()
+    }
+
+    private func restoreHidden(all: Bool) {
+        if all { hiddenFolders.removeAll() } else if !hiddenFolders.isEmpty { hiddenFolders.removeLast() } else { return }
+        applyHidden()
+    }
+
+    private func applyHidden() {
+        filterPanel.showHidden(hiddenFolders)
+        if !hiddenFolders.isEmpty { filterPanel.view.isHidden = false; filterButton.state = .on }
+        rebuildVisible()
+        reloadViews(scrollToEnd: false)
+    }
+
+    //= right-click menu on a row
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let index = table.clickedRow
+        guard index >= 0, index < visible.count else { return }
+        let row = visible[index]
+        func add(_ title: String, _ action: Selector) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            item.representedObject = row.id
+            menu.addItem(item)
+        }
+        add("Reveal in Finder", #selector(menuReveal(_:)))
+        add("Copy Path", #selector(menuCopyPath(_:)))
+        menu.addItem(NSMenuItem.separator())
+        if !row.process.isEmpty {
+            add("Show Only \"\(row.process)\"", #selector(menuOnlyProcess(_:)))
+            add("Hide \"\(row.process)\"", #selector(menuHideProcess(_:)))
+        }
+        add("Show Only This Folder", #selector(menuOnlyFolder(_:)))
+        add("Hide This Folder", #selector(menuHideFolder(_:)))
+    }
+
+    private func menuRow(_ sender: NSMenuItem) -> FileRow? {
+        guard let id = sender.representedObject as? Int else { return nil }
+        return visible.first { $0.id == id }
+    }
+
+    private func showFilterPanel() {
+        filterPanel.view.isHidden = false
+        filterButton.state = .on
+    }
+
+    @objc private func menuReveal(_ sender: NSMenuItem) {
+        guard let row = menuRow(sender) else { return }
+        let url = URL(fileURLWithPath: row.path)
+        if FileManager.default.fileExists(atPath: row.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } else {
+            setStatus("it no longer exists: \(row.path)")
+        }
+    }
+
+    @objc private func menuCopyPath(_ sender: NSMenuItem) {
+        guard let row = menuRow(sender) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(row.path, forType: .string)
+    }
+
+    @objc private func menuOnlyProcess(_ sender: NSMenuItem) {
+        guard let row = menuRow(sender) else { return }
+        filterPanel.addRule(FilterRule(field: .processName, op: .isEqual, value: row.process))
+        showFilterPanel()
+    }
+
+    @objc private func menuHideProcess(_ sender: NSMenuItem) {
+        guard let row = menuRow(sender) else { return }
+        filterPanel.addRule(FilterRule(field: .processName, op: .notEqual, value: row.process))
+        showFilterPanel()
+    }
+
+    @objc private func menuOnlyFolder(_ sender: NSMenuItem) {
+        guard let row = menuRow(sender) else { return }
+        filterPanel.addRule(FilterRule(field: .path, op: .beginsWith, value: folder(of: row) + "/"))
+        showFilterPanel()
+    }
+
+    @objc private func menuHideFolder(_ sender: NSMenuItem) {
+        guard let row = menuRow(sender) else { return }
+        hideFolder(folder(of: row))
     }
 
     private func rebuildVisible() { visible = rows.filter { matches($0) } }

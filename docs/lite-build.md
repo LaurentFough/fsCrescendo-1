@@ -100,3 +100,13 @@ Select the **File** segment: a programmatic Files view replaces the event table 
   Prune Redundant Events (cleaned rows appear about 2 s late). **Pause / Resume** (Space while the list has focus).
 - Inspector (right): path, created / modified, category, event type, owner, mode, size, inode, device, source of a move,
   process (pid, ppid, path, signing id, uid, gid). Legend bar under the list.
+
+## Files view: filter, hidden folders, row menu (P4)
+- **Filter** checkbox shows the rules: `Match All / Any of the following rules`, each rule `[field] [operator] [value]` with `-` / `+`.
+  Fields: Path, Process Name, Process Path, PID, Category, Event Type, Signing ID, File Owner (uid), Process User (uid).
+  The list follows every keystroke; empty values are ignored; start/stop markers are never filtered out. The toolbar search field
+  still applies on top.
+- **Templates**: *Apply Filter Template* menu, *Save Current Filter as Template...*, *Delete a Template...* (stored in the app's preferences).
+- **Delete** hides every change under the folder of the selected rows (a folder row hides itself); **Command-Delete** brings back the folder
+  hidden last; the panel lists the hidden folders with *Restore All*.
+- **Right-click** a row: Reveal in Finder, Copy Path, Show Only / Hide this process, Show Only / Hide this folder (these add filter rules or hidden folders).

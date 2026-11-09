@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0C0E5C01250000000000B008 /* FileFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A008 /* FileFilter.swift */; };
 		0C0E5C01250000000000B007 /* ViewController+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A007 /* ViewController+Files.swift */; };
 		0C0E5C01250000000000B006 /* FilesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A006 /* FilesViewController.swift */; };
 		0C0E5C01250000000000B005 /* DetailsResize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A005 /* DetailsResize.swift */; };
@@ -85,6 +86,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0C0E5C01250000000000A008 /* FileFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileFilter.swift; sourceTree = "<group>"; };
 		0C0E5C01250000000000A007 /* ViewController+Files.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ViewController+Files.swift"; sourceTree = "<group>"; };
 		0C0E5C01250000000000A006 /* FilesViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FilesViewController.swift"; sourceTree = "<group>"; };
 		0C0E5C01250000000000A005 /* DetailsResize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsResize.swift; sourceTree = "<group>"; };
@@ -182,6 +184,7 @@
 				4C4DEEA023F2270F00AE279A /* ViewController.swift */,
 				08B342792406E3B000457332 /* SystemExtensionHelpers.swift */,
 				08B3427B2406E42F00457332 /* TableViewHelper.swift */,
+				0C0E5C01250000000000A008 /* FileFilter.swift */,
 				0C0E5C01250000000000A007 /* ViewController+Files.swift */,
 				0C0E5C01250000000000A006 /* FilesViewController.swift */,
 				0C0E5C01250000000000A005 /* DetailsResize.swift */,
@@ -446,6 +449,7 @@
 				4CFE19F723F2516100EBDF0E /* IPCConnection.swift in Sources */,
 				4C4DEEA123F2270F00AE279A /* ViewController.swift in Sources */,
 				08B3427C2406E42F00457332 /* TableViewHelper.swift in Sources */,
+				0C0E5C01250000000000B008 /* FileFilter.swift in Sources */,
 				0C0E5C01250000000000B007 /* ViewController+Files.swift in Sources */,
 				0C0E5C01250000000000B006 /* FilesViewController.swift in Sources */,
 				0C0E5C01250000000000B005 /* DetailsResize.swift in Sources */,
