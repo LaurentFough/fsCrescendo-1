@@ -1,9 +1,10 @@
-#= filechange.py  version 0.1.0 (2026-11-09)
+#= filechange.py  version 0.2.0 (2026-11-09)
 #= Turns cresc.event/1 records (from eslogger) into FILE CHANGES in the vocabulary of a file-activity monitor:
 #=   created | deleted | modified | attributes | moved_from | moved_to | meta        (schema cresc.filechange/1)
 #= One event can yield several changes (a rename gives moved_from AND moved_to; exchangedata gives two modifications).
-#= Pure logic, no I/O. Everything marked "assumed shape" has not been checked against a real capture yet
-#= (scripts/capture-file-events.sh produces one): create/rename to a NEW name, link/clone key names, exchangedata.
+#= Pure logic, no I/O. Shapes are verified against a real capture (tests/fixtures/eslogger-file-events.jsonl, made with
+#= scripts/capture-file-events.sh): create, rename (existing and new name), unlink, close, truncate, link, clone, exchangedata
+#= and the attribute events. Not observed yet: `create` with destination_type 1 (a notify create reports the existing file).
 from __future__ import annotations
 
 import time
@@ -130,14 +131,15 @@ def from_event(ev: Event, strip_data_volume: bool = True) -> List[FileChange]:
     if kind == "file.rename":
         return [make("moved_from", "Item Renamed", ev.target, stat=stat1, destination=ev.target2),
                 make("moved_to", "Item Renamed", ev.target2, source=ev.target, stat=stat1)]
-    if kind == "file.exchange":                                  #= assumed shape: file1 / file2
+    if kind == "file.exchange":
         return [make("modified", "Items Exchanged", ev.target, stat=stat1, other=ev.target2),
                 make("modified", "Items Exchanged", ev.target2, stat=stat2, other=ev.target)]
     if kind in ("file.link", "file.clone"):
         category, text = _SIMPLE[kind]
         return [make(category, text, ev.target2 or ev.target, source=ev.target, stat=stat1)]
     if kind == "file.attr":
-        return [make("attributes", _ATTRS.get(es_event, "Attributes Changed"), ev.target, stat=stat1)]
+        what = {k: ev.details[k] for k in ("extattr", "flags", "mode_set", "atime", "mtime", "acl_set") if k in ev.details}
+        return [make("attributes", _ATTRS.get(es_event, "Attributes Changed"), ev.target, stat=stat1, **what)]
     if kind in _SIMPLE:
         category, text = _SIMPLE[kind]
         return [make(category, text, ev.target, stat=stat1)]

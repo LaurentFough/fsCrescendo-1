@@ -1,4 +1,4 @@
-#= events.py  version 0.2.0 (2026-11-09)
+#= events.py  version 0.3.0 (2026-11-09)
 #= Normalises `eslogger` JSON lines (Apple's Endpoint Security logger, macOS 13+) into one stable record: cresc.event/1.
 #= The structure follows the Endpoint Security message layout (process / event_type / event.<name>.{...});
 #= every field is optional here, because the layout varies by macOS release and event type.
@@ -199,12 +199,19 @@ def parse_event(line: str) -> Optional[Event]:
         ev.target2 = _new_path({"new_path": {"dir": payload.get("target_dir"), "filename": new_name}}) \
             or _path(payload.get("target"))
     elif name in ("uipc_connect", "uipc_bind"):
-        ev.target = _path(payload.get("file")) or _path(payload.get("dir"))
+        #= real captures: connect has `file` (the socket path); bind has `dir` + `filename` (+ `mode`)
+        bind_dir, bind_name = _path(payload.get("dir")), payload.get("filename")
+        bound = (bind_dir.rstrip("/") + "/" + bind_name) if bind_dir and isinstance(bind_name, str) and bind_name else bind_dir
+        ev.target = _path(payload.get("file")) or bound
         for k in ("domain", "type", "protocol"):
             if isinstance(payload.get(k), int):
                 ev.details[k] = payload[k]
     elif name in ("mount", "unmount"):
         ev.target = str(_g(payload, "statfs", "f_mntonname") or "")
+        for key, source in (("from", "f_mntfromname"), ("fstype", "f_fstypename")):
+            value = _g(payload, "statfs", source)
+            if isinstance(value, str) and value:
+                ev.details[key] = value
     else:
         #= unknown event type: keep the first path-like thing so it can still be scoped
         for key in ("target", "file", "source", "dir"):
@@ -220,6 +227,21 @@ def parse_event(line: str) -> Optional[Event]:
         ev.details["stat2"] = st2
     if name == "close":
         ev.details["modified"] = bool(payload.get("modified"))
+    #= what an attribute event changed (field names verified against a real capture)
+    ext = payload.get("extattr")
+    if isinstance(ext, str):
+        ev.details["extattr"] = ext
+    if name == "setflags" and _int(payload.get("flags"), None) is not None:
+        ev.details["flags"] = payload["flags"]
+    if name == "setmode" and _int(payload.get("mode"), None) is not None:
+        ev.details["mode_set"] = payload["mode"]
+    if name == "utimes":
+        for key in ("atime", "mtime"):
+            if isinstance(payload.get(key), str):
+                ev.details[key] = payload[key]
+    acl = _g(payload, "acl", "set")
+    if name == "setacl" and isinstance(acl, str):
+        ev.details["acl_set"] = acl
     mode = _g(payload, "destination", "new_path", "mode")
     if name == "create" and isinstance(mode, int) and not isinstance(mode, bool):
         ev.details["mode"] = mode                     #= requested permission bits when the file did not exist yet (assumed shape)

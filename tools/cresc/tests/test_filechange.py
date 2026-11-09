@@ -1,7 +1,7 @@
 #= test_filechange.py  version 0.1.0 (2026-11-09)
 #= File-change model: eslogger event -> created / deleted / modified / attributes / moved_from / moved_to / meta,
 #= stat extraction, path normalisation, text lines, and `watch.start view=files` through a real `cresc serve` process.
-#= Shapes marked "assumed" (create/rename to a NEW name, link/clone, exchangedata) are synthetic until a real capture exists.
+#= Synthetic shapes; the real capture is covered by test_real_file_capture.py.
 import json
 import os
 import tempfile
@@ -41,7 +41,7 @@ class MappingTests(unittest.TestCase):
     def test_create_existing_and_new_name(self):
         c, = changes("create", {"destination_type": 0, "destination": {"existing_file": f("/Users/me/a.txt", ino=42)}})
         self.assertEqual((c.category, c.event_type, c.path, c.inode), ("created", "Item Created", "/Users/me/a.txt", 42))
-        #= assumed shape: not yet existing file = directory + file name (+ requested mode)
+        #= synthetic: a not yet existing file = directory + file name (+ requested mode); not seen in real notify events
         c, = changes("create", {"destination_type": 1, "destination": {"new_path": {"dir": f("/Users/me"), "filename": "b.txt", "mode": 33188}}})
         self.assertEqual((c.category, c.path, c.inode), ("created", "/Users/me/b.txt", None))
         self.assertEqual(c.details["mode_requested"], 33188)
@@ -78,9 +78,9 @@ class MappingTests(unittest.TestCase):
         self.assertEqual((c.category, c.event_type), ("modified", "Item Truncated"))
         c, = changes("link", {"source": f("/Users/me/s", ino=4), "target_dir": f("/Users/me/d"), "target_filename": "l"})
         self.assertEqual((c.category, c.path, c.source_path, c.event_type), ("created", "/Users/me/d/l", "/Users/me/s", "Item Linked"))
-        c, = changes("clone", {"source": f("/Users/me/s"), "target_dir": f("/Users/me/d"), "target_name": "c"})      #= assumed key
+        c, = changes("clone", {"source": f("/Users/me/s"), "target_dir": f("/Users/me/d"), "target_name": "c"})     
         self.assertEqual((c.path, c.event_type), ("/Users/me/d/c", "Item Cloned"))
-        a, b = changes("exchangedata", {"file1": f("/Users/me/one", ino=1), "file2": f("/Users/me/two", ino=2)})  #= assumed shape
+        a, b = changes("exchangedata", {"file1": f("/Users/me/one", ino=1), "file2": f("/Users/me/two", ino=2)}) 
         self.assertEqual((a.path, a.inode, b.path, b.inode), ("/Users/me/one", 1, "/Users/me/two", 2))
 
     def test_other_events_are_not_file_changes(self):

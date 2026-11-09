@@ -128,7 +128,10 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
 
 ## 7a. Progress
 - P1 engine side done (cresc 0.5.0): `stat` extraction, `cresc.filechange/1`, `watch.start view=files` -> `watch.change`.
-- P0 capture tooling written: `scripts/capture-file-events.sh` (untested on a Mac until the owner runs it).
+- P0 done: the owner's real capture (178 events, macOS 26) is the fixture `tests/fixtures/eslogger-file-events.jsonl`. It verified
+  create, rename to a new and an existing name, unlink, truncate, link, clone, exchangedata, the attribute events, uipc_bind/connect
+  and mount/unmount. Corrections made: `uipc_bind` is dir + filename; attribute details (xattr name, flags, mode, times, ACL) kept;
+  mount keeps device and fstype. Still unobserved: `create` with destination_type 1.
 
 ## 8. Full build and VM idea (see also docs/future-feature-adds.md)
 - A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no
