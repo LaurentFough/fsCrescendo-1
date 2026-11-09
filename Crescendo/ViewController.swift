@@ -71,6 +71,10 @@ class ViewController: NSViewController {
         logTableView.target = self
         makeSearchFieldOptions()
         updateTimer = Date()
+        //= the details box (shared by every filter: All Events, File, Process, Network, Unsigned, Exclude Apple) can be
+        //= made taller or shorter by dragging the strip above it
+        installDetailsHandle(details: eventProps, above: eventLabel,
+                             toolTip: "Drag up or down to resize the event details")
     }
 
     // Helper to move our app to the /Applications folder, since it is a requirement for system extensions

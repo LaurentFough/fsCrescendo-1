@@ -85,3 +85,8 @@ run), `profile/` (the exact sandbox profile used, grants and history, the diff t
 - The manifest is inside the zip, so this is tamper-*evident*. For proof, store the zip's own SHA-256 (logged on export)
   somewhere separate.
 - Your home folder path becomes `~` by default; other personal data is not removed, so review before sharing.
+
+## Resizable details (v0.4)
+- Console **Denials** and **Profile** tabs: a draggable divider between the table and the details/sandbox-text area.
+- Main window: drag the strip just above "Event Details" up or down. One box serves every filter (All Events, File,
+  Process, Network, Unsigned, Exclude Apple). The height is remembered between launches.

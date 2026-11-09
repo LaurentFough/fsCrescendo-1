@@ -1,7 +1,7 @@
 import Cocoa
 import UniformTypeIdentifiers
 
-//= CrescConsole.swift  version 0.3.0 (2026-11-08)
+//= CrescConsole.swift  version 0.4.0 (2026-11-09)
 //= The cresc console: Sessions, Denials, Profile and Events tabs, driven by the `cresc serve` engine.
 //= Workflow: run a program under a sandbox profile -> review its denials -> grant rules -> stop and restart -> compare.
 //= Everything is built in code (no storyboard changes). Opened from the menu bar item "Cresc Console...".
@@ -14,7 +14,7 @@ struct DenialRow {
     var needsConfirm = false, verified = false
 }
 
-final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTabViewDelegate {
+final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTabViewDelegate, NSSplitViewDelegate {
     private let engine = EngineClient()
     private let events = EventsPane()
     let window: NSWindow
@@ -108,6 +108,43 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
             }
         }
         return candidates[1]
+    }
+
+    //= ---- resizable panes -----------------------------------------------------------------------------------
+    //= A table over a details area with a draggable divider. `bottomHeight` is the initial details height.
+    private var pendingSplits = [(split: NSSplitView, bottom: CGFloat)]()
+
+    private func makeSplit(top: NSView, bottom: NSView, bottomHeight: CGFloat) -> NSSplitView {
+        let split = NSSplitView()
+        split.isVertical = false //= panes stacked, divider is a horizontal line
+        split.dividerStyle = .thin
+        split.arrangesAllSubviews = true
+        split.delegate = self
+        split.addArrangedSubview(top)
+        split.addArrangedSubview(bottom)
+        split.setHoldingPriority(NSLayoutConstraint.Priority(250), forSubviewAt: 0) //= the table takes spare height...
+        split.setHoldingPriority(NSLayoutConstraint.Priority(260), forSubviewAt: 1) //= ...the details keep their size
+        split.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .vertical)
+        split.heightAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+        pendingSplits.append((split, bottomHeight))
+        return split
+    }
+
+    //= sets the initial divider position once the split has a real size (first time its tab is shown)
+    private func applyPendingSplits() {
+        pendingSplits.removeAll { entry in
+            guard entry.split.bounds.height > entry.bottom + 120 else { return false }
+            entry.split.setPosition(entry.split.bounds.height - entry.bottom - entry.split.dividerThickness, ofDividerAt: 0)
+            return true
+        }
+    }
+
+    func splitView(_ split: NSSplitView, constrainMinCoordinate proposed: CGFloat, ofSubviewAt _: Int) -> CGFloat {
+        max(proposed, 100) //= keep at least 100 pt of table
+    }
+
+    func splitView(_ split: NSSplitView, constrainMaxCoordinate proposed: CGFloat, ofSubviewAt _: Int) -> CGFloat {
+        min(proposed, split.bounds.height - 50 - split.dividerThickness) //= keep at least 50 pt of details
     }
 
     //= ---- small UI helpers ----------------------------------------------------------------------------------
@@ -281,12 +318,12 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
                   tips: Dictionary(uniqueKeysWithValues: denialColumns.map { ($0.id, $0.tip) }))
         denialTable.allowsMultipleSelection = true
         denialTable.toolTip = "Select rows, then use the buttons below. Rows without a rule cannot be granted."
-        let tableScroll = scrolling(denialTable, minHeight: 220, grows: true)
+        let tableScroll = scrolling(denialTable, minHeight: 100, grows: true)
 
         configureText(detailView)
         detailView.font = NSFont.userFixedPitchFont(ofSize: 11)
         detailView.toolTip = "Details of the selected denial"
-        let detailScroll = scrolling(detailView, minHeight: 90)
+        let detailScroll = scrolling(detailView, minHeight: 50)
 
         let grants = NSStackView(views: [
             button("Grant selected", "Add the rules of the selected rows to the profile (a new profile version)", #selector(grantSelected)),
@@ -303,7 +340,8 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         ])
         evidence.orientation = .horizontal
 
-        let stack = NSStackView(views: [top, tableScroll, detailScroll, grants, evidence])
+        let split = makeSplit(top: tableScroll, bottom: detailScroll, bottomHeight: 120)
+        let stack = NSStackView(views: [top, split, grants, evidence])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -316,12 +354,12 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         profileInfo.toolTip = "The profile named on the Sessions tab"
         makeTable(historyTable, columns: historyColumns)
         historyTable.toolTip = "Every change to the profile. Select a row to see that version's sandbox text."
-        let tableScroll = scrolling(historyTable, minHeight: 150)
+        let tableScroll = scrolling(historyTable, minHeight: 100, grows: true)
 
         configureText(sbplView)
         sbplView.font = NSFont.userFixedPitchFont(ofSize: 11)
         sbplView.toolTip = "The sandbox profile text (SBPL) of the selected version"
-        let sbplScroll = scrolling(sbplView, minHeight: 220, grows: true)
+        let sbplScroll = scrolling(sbplView, minHeight: 50)
 
         let buttons = NSStackView(views: [
             button("Refresh", "Reload the history from the engine", #selector(refreshProfile)),
@@ -329,7 +367,8 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
             button("Revoke selected grant", "Remove the grant of the selected history row (creates a new profile version)", #selector(revokeSelected)),
         ])
         buttons.orientation = .horizontal
-        let stack = NSStackView(views: [profileInfo, tableScroll, buttons, sbplScroll])
+        let split = makeSplit(top: tableScroll, bottom: sbplScroll, bottomHeight: 300)
+        let stack = NSStackView(views: [profileInfo, buttons, split])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
@@ -341,6 +380,7 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
     func show() {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.async { [weak self] in self?.applyPendingSplits() }
     }
 
     func windowWillClose(_: Notification) {
@@ -348,6 +388,7 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
     }
 
     func tabView(_: NSTabView, didSelect item: NSTabViewItem?) {
+        DispatchQueue.main.async { [weak self] in self?.applyPendingSplits() }
         switch item?.label {
         case "Denials": reloadDenials()
         case "Profile": refreshProfile()

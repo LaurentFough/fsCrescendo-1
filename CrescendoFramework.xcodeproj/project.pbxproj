@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0C0E5C01250000000000B005 /* DetailsResize.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A005 /* DetailsResize.swift */; };
 		0C0E5C01250000000000B004 /* ListField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A004 /* ListField.swift */; };
 		0C0E5C01250000000000B003 /* EventsPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A003 /* EventsPane.swift */; };
 		0C0E5C01250000000000B002 /* CrescConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C0E5C01250000000000A002 /* CrescConsole.swift */; };
@@ -82,6 +83,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0C0E5C01250000000000A005 /* DetailsResize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailsResize.swift; sourceTree = "<group>"; };
 		0C0E5C01250000000000A004 /* ListField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListField.swift; sourceTree = "<group>"; };
 		0C0E5C01250000000000A003 /* EventsPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventsPane.swift; sourceTree = "<group>"; };
 		0C0E5C01250000000000A002 /* CrescConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrescConsole.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 				4C4DEEA023F2270F00AE279A /* ViewController.swift */,
 				08B342792406E3B000457332 /* SystemExtensionHelpers.swift */,
 				08B3427B2406E42F00457332 /* TableViewHelper.swift */,
+				0C0E5C01250000000000A005 /* DetailsResize.swift */,
 				0C0E5C01250000000000A004 /* ListField.swift */,
 				0C0E5C01250000000000A003 /* EventsPane.swift */,
 				0C0E5C01250000000000A002 /* CrescConsole.swift */,
@@ -437,6 +440,7 @@
 				4CFE19F723F2516100EBDF0E /* IPCConnection.swift in Sources */,
 				4C4DEEA123F2270F00AE279A /* ViewController.swift in Sources */,
 				08B3427C2406E42F00457332 /* TableViewHelper.swift in Sources */,
+				0C0E5C01250000000000B005 /* DetailsResize.swift in Sources */,
 				0C0E5C01250000000000B004 /* ListField.swift in Sources */,
 				0C0E5C01250000000000B003 /* EventsPane.swift in Sources */,
 				0C0E5C01250000000000B002 /* CrescConsole.swift in Sources */,
