@@ -74,7 +74,7 @@ Names are letters, digits, `.`, `_`, `-` (profiles). Paths must be absolute. `ru
 | `run.export` | `name`, `run?`, `path?` (absolute `.zip`), `events_file?`, `redact?` (default true), `force?` | `path`, `sha256`, `bytes`, `top`, `files`: an evidence bundle of that run (`cresc.bundle/1`) |
 | `bundle.verify` | `path` | `ok`, `checked`, `problems[]` |
 | `esd.status` | `socket?` | `available`, and when reachable `state`, `version`, `fda` |
-| `watch.start` | `source: {file, follow?}`, `scopes?: [{kind, value}]`, `no_follow?`, `mute?[]`, `no_mute?`, `kinds?[]`, `denials?[]`, `settle?` | `watch_id` |
+| `watch.start` | `source: {file, follow?} or {socket, events?}`, `view?` (`events`/`files`), `strip_data_volume?`, `scopes?: [{kind, value}]`, `no_follow?`, `mute?[]`, `no_mute?`, `kinds?[]`, `denials?[]`, `settle?` | `watch_id` |
 | `watch.stop` / `watch.stats` | `watch_id` | `stopping` / `running`, `stats` |
 
 `triage` items and rule fields are the `cresc.triage/1` shapes (`class`, `risk`, `needs_confirm`, `rule: {id, text, op, kind, value, verified, confirm, note}`).
@@ -99,6 +99,7 @@ The server never runs as root and never starts `eslogger` itself. A privileged h
 | `run.finished` | `name`, `run`, `meta` (`cresc.run/1`: `exit`, `timed_out`, `stopped`, `interrupted`, `duration_s`, `cwd`, `env_names`, ...), `triage` |
 | `run.error` | `name`, `run`, `message` |
 | `watch.event` | `watch_id`, `event` (`cresc.event/1`; denials appear with `kind: "sandbox.deny"`) |
+| `watch.change` | `watch_id`, `change` (`cresc.filechange/1`: `category` created / deleted / modified / attributes / moved_from / moved_to / meta; `path`, `source_path`, `file{inode, device, mode, uid, gid, size, created, modified}`, `process{pid, ppid, name, path, signing_id, uid, gid}`); sent instead of `watch.event` when `watch.start` has `view: "files"`, with meta rows "Recording started" / "Recording stopped" |
 | `watch.ended` / `watch.error` | `watch_id`, `stats: {read, shown, skipped_lines, dropped, by_kind}` / `message` |
 
 ## Example

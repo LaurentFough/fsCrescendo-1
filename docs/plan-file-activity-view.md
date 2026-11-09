@@ -111,15 +111,24 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
 | 5 | Keep the segments All Events, File, Process, Network, Unsigned, Exclude Apple; File gets the FSMonitor look. |
 | 6 | Process and Network panes unchanged for now. |
 
-## 7. Consequences of the document-based decision (proposal, to confirm)
-- A recording (live or saved) is a document window; **that window is the main Crescendo window**, and the segments above are its
-  filter segments. The app opens with an untitled live recording; Save writes `.crescrec`; Open replays one.
-- `.crescrec` = header line (session info) + `cresc.event/1` lines (all kinds, not only file events). The file-change view
-  (`cresc.filechange/1`, cleanup modes) is derived by the engine, so old recordings benefit from later improvements.
-- Record player: play / pause, speed (0.5x to 50x), step to next change, scrub by time, jump to a selected row. The engine
-  replays a recording through the same code path as live capture (`recording.play`, `recording.seek`), so filters, cleanup and
-  the table behave identically live and in replay.
+## 7. Architecture (confirmed 2026-11-09)
+- **Live monitor = the main Crescendo window** (not a document): a rolling buffer of current activity. The user filters and
+  inspects it, then chooses to **Record**: a recording starts (optionally with a pre-roll from the buffer, "keep the last N
+  minutes") and, when stopped, opens as a saved `.crescrec` document in a **player window** (`NSDocument`).
+- **Cresc console sessions are recordable too**: a session recording holds the run (program, arguments, profile version),
+  denials with timestamps, stdout/stderr chunks with timestamps, grant and restart markers, and, when the daemon is available,
+  the file/process events of the run's process tree. Engine gap: today stdout/stderr are saved without timing; the run loop
+  needs a timeline (planned in P5).
+- **Record player**: open a `.crescrec`, replay the activity at the recorded cadence (play / pause, speed, step to next change,
+  scrub by time, jump to a selected row). The engine replays through the same code path as live capture
+  (`recording.play` / `recording.seek`), so filters, cleanup and the table behave identically live and in replay.
+- `.crescrec` = header line (kind: live-capture or run-session; session info) + typed JSON lines (events, denials, run and grant
+  markers, notes). The file-change view is derived by the engine, so old recordings benefit from later improvements.
 - Sources behind one `EventSource` interface: local daemon, remote engine (section 8), recordings.
+
+## 7a. Progress
+- P1 engine side done (cresc 0.5.0): `stat` extraction, `cresc.filechange/1`, `watch.start view=files` -> `watch.change`.
+- P0 capture tooling written: `scripts/capture-file-events.sh` (untested on a Mac until the owner runs it).
 
 ## 8. Full build and VM idea (see also docs/future-feature-adds.md)
 - A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no

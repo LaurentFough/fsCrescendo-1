@@ -19,7 +19,7 @@ import traceback
 import uuid
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
-from . import SCHEMAS, __version__, esd
+from . import SCHEMAS, __version__, esd, filechange
 from .classify import path_entries
 from .cli import CliError, apply_grants, manual_item, select_for_grant
 from .denials import fold, parse_lines
@@ -494,11 +494,17 @@ class Server:
         return dict(info, available=True, socket=path)
 
     def m_watch_start(self, p: Dict) -> Dict:
+        #= view "events" (default): raw cresc.event/1 as `watch.event`. view "files": file changes as `watch.change`
+        #= (cresc.filechange/1: created / deleted / modified / attributes / moved_from / moved_to / meta).
+        view = p_str(p, "view", required=False, default="events") or "events"
+        if view not in ("events", "files"):
+            raise ApiError("invalid_params", "view must be \"events\" or \"files\"")
+        strip_data = p_bool(p, "strip_data_volume", default=True)
         source = p.get("source")
         if not isinstance(source, dict):
             raise ApiError("invalid_params", "source must be {\"file\": ...} or {\"socket\": ..., \"events\": [...]}")
         sock_path = None
-        sock_events: List[str] = list(esd.DEFAULT_EVENTS)
+        sock_events: List[str] = list(filechange.FILE_EVENTS if view == "files" else esd.DEFAULT_EVENTS)
         if "socket" in source:
             sock_path = source["socket"] if isinstance(source["socket"], str) else ""
             if not os.path.isabs(sock_path):
@@ -549,9 +555,18 @@ class Server:
                 raise ApiError("session_error", "cannot start the denial watcher: %s" % handle.watcher.error)
 
         def emit(ev) -> None:
-            self.push("watch.event", {"watch_id": handle.id, "event": ev.to_dict()})
+            if view == "files":
+                for change in filechange.from_event(ev, strip_data):
+                    self.push("watch.change", {"watch_id": handle.id, "change": change.to_dict()})
+            else:
+                self.push("watch.event", {"watch_id": handle.id, "event": ev.to_dict()})
+
+        def marker(text: str) -> None:
+            if view == "files":
+                self.push("watch.change", {"watch_id": handle.id, "change": filechange.meta_change(text).to_dict()})
 
         def worker() -> None:
+            marker("Recording started")
             try:
                 run_watch(esd.socket_lines(path, sock_events, handle.stop) if sock_path
                           else line_source(path, handle.stop, follow), flt, emit, handle.stats)
@@ -563,6 +578,7 @@ class Server:
             finally:
                 if handle.watcher:
                     handle.watcher.stop()
+                marker("Recording stopped")
                 self.push("watch.ended", {"watch_id": handle.id, "stats": handle.stats.to_dict()})
 
         handle.thread = threading.Thread(target=worker, daemon=True)

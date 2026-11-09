@@ -1,4 +1,4 @@
-#= events.py  version 0.1.0 (2026-11-08)
+#= events.py  version 0.2.0 (2026-11-09)
 #= Normalises `eslogger` JSON lines (Apple's Endpoint Security logger, macOS 13+) into one stable record: cresc.event/1.
 #= The structure follows the Endpoint Security message layout (process / event_type / event.<name>.{...});
 #= every field is optional here, because the layout varies by macOS release and event type.
@@ -37,6 +37,8 @@ class Event:
     signing_id: str = ""
     team_id: str = ""
     platform: bool = False
+    euid: int = -1                              #= effective uid / gid of the acting process
+    egid: int = -1
     target: str = ""
     target2: str = ""                          #= second path (rename/link destination)
     details: Dict[str, Any] = field(default_factory=dict)
@@ -53,7 +55,7 @@ class Event:
         return {"schema": SCHEMAS["event"], "ts": self.ts, "seq": self.seq, "kind": self.kind,
                 "actor": {"pid": self.pid, "ppid": self.ppid, "responsible_pid": self.responsible_pid,
                           "path": self.process, "signing_id": self.signing_id,
-                          "team_id": self.team_id, "platform": self.platform},
+                          "team_id": self.team_id, "platform": self.platform, "euid": self.euid, "egid": self.egid},
                 "target": self.target, "target2": self.target2, "details": self.details}
 
 
@@ -73,6 +75,42 @@ def _path(obj: Any) -> str:
 
 def _int(value: Any, default: int = -1) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else default
+
+
+def _stat(obj: Any) -> Optional[Dict[str, Any]]:
+    """The per-file stat eslogger attaches to every es_file_t (real captures: inode, device, mode, owner, ISO timestamps)."""
+    st = _g(obj, "stat")
+    if not isinstance(st, dict):
+        return None
+
+    def when(key: str) -> Optional[str]:
+        v = st.get(key)
+        return v if isinstance(v, str) else None
+    return {"inode": _int(st.get("st_ino"), None), "device": _int(st.get("st_dev"), None), "mode": _int(st.get("st_mode"), None),
+            "uid": _int(st.get("st_uid"), None), "gid": _int(st.get("st_gid"), None), "size": _int(st.get("st_size"), None),
+            "nlink": _int(st.get("st_nlink"), None), "created": when("st_birthtimespec"), "modified": when("st_mtimespec"),
+            "changed": when("st_ctimespec")}
+
+
+_STAT_TARGET = ("close", "write", "truncate", "unlink", "setattrlist", "setmode", "setowner", "setflags", "setextattr",
+                "deleteextattr", "setacl", "utimes")
+
+
+def _stat_objects(name: str, p: Dict) -> Tuple[Any, Any]:
+    """Which parts of the payload hold the file(s) a stat belongs to (primary, secondary)."""
+    if name == "open":
+        return p.get("file"), None
+    if name in _STAT_TARGET:
+        return p.get("target"), None
+    if name == "create":
+        return _g(p, "destination", "existing_file"), None
+    if name == "rename":
+        return p.get("source"), _g(p, "destination", "existing_file")
+    if name in ("link", "clone"):
+        return p.get("source"), None
+    if name == "exchangedata":
+        return p.get("file1"), p.get("file2")
+    return None, None
 
 
 def _new_path(dest: Any) -> str:
@@ -112,7 +150,9 @@ def parse_event(line: str) -> Optional[Event]:
                process=_path(_g(proc, "executable")),
                signing_id=_g(proc, "signing_id") if isinstance(_g(proc, "signing_id"), str) else "",
                team_id=_g(proc, "team_id") if isinstance(_g(proc, "team_id"), str) else "",
-               platform=bool(_g(proc, "is_platform_binary")))
+               platform=bool(_g(proc, "is_platform_binary")),
+               euid=_int(_g(proc, "audit_token", "euid")), egid=_int(_g(proc, "audit_token", "egid")))
+    ev.details["es_event"] = str(name)           #= the eslogger event name (tells setmode from setowner etc.)
     if ev.seq == -1:
         ev.seq = None
 
@@ -139,7 +179,10 @@ def parse_event(line: str) -> Optional[Event]:
     elif name == "close":
         ev.target = _path(payload.get("target"))
         ev.details["modified"] = bool(payload.get("modified"))
-    elif name in ("write", "truncate", "mmap", "exchangedata", "setmode", "setowner", "setflags", "setextattr",
+    elif name == "exchangedata":                      #= assumed shape: es_event_exchangedata_t has file1 / file2
+        ev.target = _path(payload.get("file1"))
+        ev.target2 = _path(payload.get("file2"))
+    elif name in ("write", "truncate", "mmap", "setmode", "setowner", "setflags", "setextattr",
                   "deleteextattr", "setacl", "setattrlist", "utimes"):
         ev.target = _path(payload.get("target")) or _path(payload.get("file"))
     elif name == "create":
@@ -151,7 +194,9 @@ def parse_event(line: str) -> Optional[Event]:
         ev.target = _path(payload.get("target"))
     elif name in ("link", "clone"):
         ev.target = _path(payload.get("source"))
-        ev.target2 = _new_path({"new_path": {"dir": payload.get("target_dir"), "filename": payload.get("target_filename")}}) \
+        #= link names the new file target_filename, clone target_name (assumed; both are accepted)
+        new_name = payload.get("target_filename") or payload.get("target_name")
+        ev.target2 = _new_path({"new_path": {"dir": payload.get("target_dir"), "filename": new_name}}) \
             or _path(payload.get("target"))
     elif name in ("uipc_connect", "uipc_bind"):
         ev.target = _path(payload.get("file")) or _path(payload.get("dir"))
@@ -167,4 +212,15 @@ def parse_event(line: str) -> Optional[Event]:
             if p:
                 ev.target = p
                 break
+    primary, secondary = _stat_objects(name, payload)
+    st1, st2 = _stat(primary), _stat(secondary)
+    if st1:
+        ev.details["stat"] = st1
+    if st2:
+        ev.details["stat2"] = st2
+    if name == "close":
+        ev.details["modified"] = bool(payload.get("modified"))
+    mode = _g(payload, "destination", "new_path", "mode")
+    if name == "create" and isinstance(mode, int) and not isinstance(mode, bool):
+        ev.details["mode"] = mode                     #= requested permission bits when the file did not exist yet (assumed shape)
     return ev

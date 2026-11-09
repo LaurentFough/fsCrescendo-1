@@ -298,6 +298,17 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_capture_filter(args: argparse.Namespace) -> int:
+    """Reduce a raw eslogger capture to the events about the given markers, with the home folder path replaced."""
+    from .capture import filter_capture
+    with open(args.raw, encoding="utf-8", errors="replace") as fh:
+        kept, counts = filter_capture(fh, args.marker, home=args.redact_home or os.path.expanduser("~"))
+    with open(args.output, "w", encoding="utf-8") as out:
+        out.write("".join(line + "\n" for line in kept))
+    emit_json({"kept": len(kept), "by_event": counts, "output": os.path.abspath(args.output)})
+    return 0
+
+
 def cmd_verify_bundle(args: argparse.Namespace) -> int:
     from .export import verify_bundle
     result = verify_bundle(os.path.abspath(args.bundle))
@@ -560,6 +571,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sp.add_parser("verify-bundle", help="check an evidence bundle against its manifest")
     add_common(p); p.add_argument("bundle"); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_verify_bundle)
+
+    p = sp.add_parser("capture-filter", help="keep only the eslogger events that mention a marker (a path), redacting your home folder")
+    add_common(p); p.add_argument("raw"); p.add_argument("output"); p.add_argument("--marker", action="append", required=True, metavar="TEXT")
+    p.add_argument("--redact-home", metavar="PATH", help="home folder path to replace by /Users/me (default: yours)"); p.set_defaults(func=cmd_capture_filter)
 
     p = sp.add_parser("runs", help="list the runs of a profile")
     add_common(p); p.add_argument("name"); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_runs)
