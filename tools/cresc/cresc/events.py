@@ -188,6 +188,7 @@ def parse_event(line: str) -> Optional[Event]:
     elif name == "create":
         ev.target = _new_path(payload.get("destination"))
     elif name == "rename":
+        ev.details["replaced"] = _int(payload.get("destination_type"), None) == 0     #= renamed OVER an existing file
         ev.target = _path(payload.get("source"))
         ev.target2 = _new_path(payload.get("destination"))
     elif name == "unlink":

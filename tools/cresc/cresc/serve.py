@@ -20,6 +20,7 @@ import uuid
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from . import SCHEMAS, __version__, esd, filechange
+from .cleanup import MODES as CLEANUP_MODES, Cleaner
 from .classify import path_entries
 from .cli import CliError, apply_grants, manual_item, select_for_grant
 from .denials import fold, parse_lines
@@ -500,6 +501,14 @@ class Server:
         if view not in ("events", "files"):
             raise ApiError("invalid_params", "view must be \"events\" or \"files\"")
         strip_data = p_bool(p, "strip_data_volume", default=True)
+        #= cleanup (files view only): none | coalesce | prune; rows then lag by about `cleanup_window` seconds
+        cleanup = p_str(p, "cleanup", required=False, default="none") or "none"
+        if cleanup not in CLEANUP_MODES:
+            raise ApiError("invalid_params", "cleanup must be one of %s" % ", ".join(CLEANUP_MODES))
+        cleanup_window = p_num(p, "cleanup_window", default=2.0, lo=0, hi=60)
+        cleaner = Cleaner(cleanup, cleanup_window) if (view == "files" and cleanup != "none") else None
+        cleaner_lock = threading.Lock()
+        finished = threading.Event()
         source = p.get("source")
         if not isinstance(source, dict):
             raise ApiError("invalid_params", "source must be {\"file\": ...} or {\"socket\": ..., \"events\": [...]}")
@@ -554,19 +563,44 @@ class Server:
                     self.watches.pop(handle.id, None)
                 raise ApiError("session_error", "cannot start the denial watcher: %s" % handle.watcher.error)
 
+        def push_changes(rows) -> None:
+            for change in rows:
+                self.push("watch.change", {"watch_id": handle.id, "change": change.to_dict()})
+
         def emit(ev) -> None:
             if view == "files":
                 for change in filechange.from_event(ev, strip_data):
-                    self.push("watch.change", {"watch_id": handle.id, "change": change.to_dict()})
+                    if cleaner is None:
+                        push_changes([change])
+                    else:
+                        with cleaner_lock:
+                            rows = cleaner.feed(change, time.monotonic())
+                        push_changes(rows)
             else:
                 self.push("watch.event", {"watch_id": handle.id, "event": ev.to_dict()})
 
         def marker(text: str) -> None:
             if view == "files":
-                self.push("watch.change", {"watch_id": handle.id, "change": filechange.meta_change(text).to_dict()})
+                #= meta rows flush the cleaner first, so "Recording stopped" really is the last row
+                rows = []
+                if cleaner is not None:
+                    with cleaner_lock:
+                        rows = cleaner.flush()
+                push_changes(rows)
+                push_changes([filechange.meta_change(text)])
+
+        def ticker() -> None:
+            while not (finished.is_set() or handle.stop.wait(0.5)):
+                with cleaner_lock:
+                    rows = cleaner.settle(time.monotonic())
+                push_changes(rows)
 
         def worker() -> None:
             marker("Recording started")
+            tick = None
+            if cleaner is not None:
+                tick = threading.Thread(target=ticker, name="cleanup-%s" % handle.id, daemon=True)
+                tick.start()
             try:
                 run_watch(esd.socket_lines(path, sock_events, handle.stop) if sock_path
                           else line_source(path, handle.stop, follow), flt, emit, handle.stats)
@@ -578,6 +612,9 @@ class Server:
             finally:
                 if handle.watcher:
                     handle.watcher.stop()
+                finished.set()
+                if tick is not None:
+                    tick.join(2)
                 marker("Recording stopped")
                 self.push("watch.ended", {"watch_id": handle.id, "stats": handle.stats.to_dict()})
 

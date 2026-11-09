@@ -130,7 +130,7 @@ def from_event(ev: Event, strip_data_volume: bool = True) -> List[FileChange]:
         return [make("created", "Item Created", ev.target, stat=stat1, **extra)]
     if kind == "file.rename":
         return [make("moved_from", "Item Renamed", ev.target, stat=stat1, destination=ev.target2),
-                make("moved_to", "Item Renamed", ev.target2, source=ev.target, stat=stat1)]
+                make("moved_to", "Item Renamed", ev.target2, source=ev.target, stat=stat1, replaced=bool(ev.details.get("replaced")))]
     if kind == "file.exchange":
         return [make("modified", "Items Exchanged", ev.target, stat=stat1, other=ev.target2),
                 make("modified", "Items Exchanged", ev.target2, stat=stat2, other=ev.target)]
@@ -144,6 +144,9 @@ def from_event(ev: Event, strip_data_volume: bool = True) -> List[FileChange]:
         category, text = _SIMPLE[kind]
         return [make(category, text, ev.target, stat=stat1)]
     return []
+
+
+FILES_HEADER = "%-23s %-4s %-7s %-18s %-20s %s" % ("DATE", "CAT", "PID", "PROCESS", "INODE", "PATH")
 
 
 def format_change(c: FileChange) -> str:

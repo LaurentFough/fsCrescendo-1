@@ -21,6 +21,7 @@ from .profile import Profile, ProfileError, default_store
 from .scope import DEFAULT_MUTE, Filter, parse_scope
 from .session import (LogWatcher, SessionError, compare_groups, latest_run_number, list_runs, load_run, run_once,
                       safe_text)
+from .filechange import FILES_HEADER
 from .watch import HEADER, Stats, denial_event, format_event, json_line, run_watch
 from .triage import Item, suggested_prefixes, summary, triage
 
@@ -333,10 +334,31 @@ def cmd_watch(args: argparse.Namespace) -> int:
     mute = [] if args.no_mute else list(DEFAULT_MUTE) + list(args.mute)
     flt = Filter(scopes, follow=not args.no_follow, mute=mute, kinds=[k.strip() for k in (args.kinds or "").split(",") if k.strip()])
     lock = threading.Lock()
+    cleaner = None
+    ticking = threading.Event()
+    if args.files:
+        from .cleanup import Cleaner
+        from .filechange import FILE_EVENTS, format_change
+        cleaner = Cleaner(args.cleanup, args.cleanup_window)
+
+    def show_changes(rows) -> None:
+        for change in rows:
+            print(json.dumps(change.to_dict(), sort_keys=True) if args.json else format_change(change), flush=True)
 
     def emit(ev) -> None:
+        if args.files:                      #= file-change view: events become created / deleted / modified / ... rows
+            from .filechange import from_event
+            for change in from_event(ev):
+                with lock:
+                    show_changes(cleaner.feed(change, time.monotonic()) if args.cleanup != "none" else [change])
+            return
         with lock:
             print(json_line(ev) if args.json else format_event(ev), flush=True)
+
+    def settle_loop() -> None:              #= releases cleaned rows while a live stream is quiet
+        while not ticking.wait(0.5):
+            with lock:
+                show_changes(cleaner.settle(time.monotonic()))
 
     watcher = None
     if args.denials:
@@ -359,8 +381,14 @@ def cmd_watch(args: argparse.Namespace) -> int:
                 raise CliError("cannot read %s: %s" % (args.source, exc), 66)
             lines = stream
         if not args.json:
-            print(HEADER, flush=True)
+            print(FILES_HEADER if args.files else HEADER, flush=True)
+        if cleaner is not None and args.cleanup != "none":
+            threading.Thread(target=settle_loop, daemon=True).start()
         run_watch(lines, flt, emit, stats, args.limit)
+        ticking.set()
+        if cleaner is not None:
+            with lock:
+                show_changes(cleaner.flush())
         if watcher:
             time.sleep(args.settle)                #= denials are logged asynchronously; give the last ones a moment
     finally:
@@ -555,7 +583,13 @@ def build_parser() -> argparse.ArgumentParser:
                    help="also show Sandbox denials of this process name (repeatable)")
     p.add_argument("--settle", type=float, default=2.0, help="seconds to keep listening for denials after the input ends (default 2)")
     p.add_argument("--limit", type=int, help="stop after this many shown events")
-    p.add_argument("--json", action="store_true", help="one cresc.event/1 JSON object per line")
+    p.add_argument("--json", action="store_true", help="one cresc.event/1 JSON object per line (cresc.filechange/1 with --files)")
+    p.add_argument("--files", action="store_true",
+                   help="file-change view (created, deleted, modified, attributes, moved): feed it eslogger create rename unlink close ...")
+    p.add_argument("--cleanup", choices=("none", "coalesce", "prune"), default="none",
+                   help="with --files: coalesce repeated changes, or prune temp files and atomic saves too (default none)")
+    p.add_argument("--cleanup-window", type=float, default=2.0, metavar="S",
+                   help="with --cleanup: seconds a file must be quiet before its rows are shown (default 2)")
     p.set_defaults(func=cmd_watch)
 
     p = sp.add_parser("serve", help="machine-readable JSON-lines interface on stdin/stdout, for a GUI (see PROTOCOL.md)")

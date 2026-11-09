@@ -133,6 +133,11 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
   and mount/unmount. Corrections made: `uipc_bind` is dir + filename; attribute details (xattr name, flags, mode, times, ACL) kept;
   mount keeps device and fstype. Still unobserved: `create` with destination_type 1.
 
+- P2 done (cresc 0.6.0): cleanup modes `none` / `coalesce` / `prune` (`cresc/cleanup.py`), `watch.start cleanup=...`, and
+  `cresc watch --files`. On the real capture 57 rows become 52 (coalesce) and 17 (prune). Findings: `cp -c` emits both a clone
+  and a create event for one file; interleaved modify and attribute rows must still coalesce; two atomic saves of one target
+  inside the window become one row (first_ts..ts spans them). Cleaned live output lags by about the window.
+
 ## 8. Full build and VM idea (see also docs/future-feature-adds.md)
 - A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no
   SIP-on workaround. For observation it adds little over `eslogger`; it adds real-time blocking (AUTH events), which the sandbox
