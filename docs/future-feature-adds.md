@@ -32,6 +32,12 @@ Also from the FSMonitor feature list (see `docs/plan-file-activity-view.md`): th
 by path / event category / process with saved filter templates, inspector with the exact kind of change, export as JSON
 or plain text, command-line tool for automation, graph visualisation of file activity (planned as its own feature).
 
+## Added 2026-11-09
+- [ ] **Remote lab source**: run `cresc serve` and the event daemon in a macOS VM (disposable snapshots, SIP can stay on for
+  `eslogger`) and connect the app to it over SSH or vsock; the app shows guest activity as another event source.
+- [ ] Record player for `.crescrec` documents (play/pause, speed, scrub) is part of the file-activity plan, not parked.
+- [ ] Optionally request Apple's Endpoint Security entitlement in parallel (only useful for blocking/AUTH events).
+
 ## Parked earlier (decisions pending)
 - [ ] Event daemon: stop other processes of the same user from starting the stream (client code-signature check).
 - [ ] Attach Events-tab rows to evidence bundles automatically (resolved by recordings in the plan above).

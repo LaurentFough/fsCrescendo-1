@@ -101,10 +101,29 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
 - **Layout**: the main window is a storyboard with fixed frames; adding an inspector at runtime is fragile (see decision 1).
 - **Privacy**: recordings contain paths and process names; redaction as in evidence bundles.
 
-## 6. Decisions to discuss
-1. Main window UI: patch the storyboard, or host a new programmatic Files view and keep the old controller for the full build?
-2. Is eslogger-via-daemon the primary source, with FSEvents as an optional no-root mode later?
-3. Recordings: simple Save/Open of `.crescrec` files first, real `NSDocument` later?
-4. Visualisation technology: native drawing, or a bundled web view?
-5. Keep the existing segments (All Events, File, Process, Network, Unsigned, Exclude Apple) and give File the new look?
-6. Process/Network panes: unchanged for now?
+## 6. Decisions (2026-11-09)
+| # | Decision |
+|---|---|
+| 1 | New programmatic Files UI. The storyboard window and the ES-extension controller stay in the repo, dormant and unmaintained ("full build" is no longer a goal; see section 7). |
+| 2 | `eslogger` via the daemon is the primary source; public FSEvents as an optional no-root mode later. |
+| 3 | Recordings are **document based from the start**: `NSDocument` for `.crescrec` including a record player (open, replay, scrub). |
+| 4 | Graph visualisation: native drawing. |
+| 5 | Keep the segments All Events, File, Process, Network, Unsigned, Exclude Apple; File gets the FSMonitor look. |
+| 6 | Process and Network panes unchanged for now. |
+
+## 7. Consequences of the document-based decision (proposal, to confirm)
+- A recording (live or saved) is a document window; **that window is the main Crescendo window**, and the segments above are its
+  filter segments. The app opens with an untitled live recording; Save writes `.crescrec`; Open replays one.
+- `.crescrec` = header line (session info) + `cresc.event/1` lines (all kinds, not only file events). The file-change view
+  (`cresc.filechange/1`, cleanup modes) is derived by the engine, so old recordings benefit from later improvements.
+- Record player: play / pause, speed (0.5x to 50x), step to next change, scrub by time, jump to a selected row. The engine
+  replays a recording through the same code path as live capture (`recording.play`, `recording.seek`), so filters, cleanup and
+  the table behave identically live and in replay.
+- Sources behind one `EventSource` interface: local daemon, remote engine (section 8), recordings.
+
+## 8. Full build and VM idea (see also docs/future-feature-adds.md)
+- A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no
+  SIP-on workaround. For observation it adds little over `eslogger`; it adds real-time blocking (AUTH events), which the sandbox
+  grant workflow does not need.
+- Remote lab: run the engine and daemon inside a macOS VM (Virtualization framework, Apple silicon host) and drive it from the
+  app over SSH or vsock using the existing JSON-lines protocol. SIP can stay on in the guest for the `eslogger` route.
