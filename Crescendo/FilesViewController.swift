@@ -284,6 +284,9 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
 
         //= text
         textView.isEditable = false
+        textView.textColor = .labelColor
+        textView.drawsBackground = true
+        textView.backgroundColor = .textBackgroundColor
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = true
         textView.font = NSFont.userFixedPitchFont(ofSize: 11)
@@ -332,6 +335,9 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
 
         //= inspector
         inspectorView.isEditable = false
+        inspectorView.textColor = .labelColor //= never rely on the default: text without a colour is drawn black
+        inspectorView.drawsBackground = true
+        inspectorView.backgroundColor = .textBackgroundColor
         inspectorView.isVerticallyResizable = true
         inspectorView.autoresizingMask = [.width]
         inspectorView.textContainer?.widthTracksTextView = true
@@ -878,12 +884,12 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         let bold = NSFont.boldSystemFont(ofSize: 12), normal = NSFont.systemFont(ofSize: 12)
         let out = NSMutableAttributedString()
         func heading(_ text: String) {
-            out.append(NSAttributedString(string: (out.length == 0 ? "" : "\n") + text + "\n", attributes: [.font: bold]))
+            out.append(NSAttributedString(string: (out.length == 0 ? "" : "\n") + text + "\n", attributes: [.font: bold, .foregroundColor: NSColor.labelColor]))
         }
         func line(_ key: String, _ value: String) {
             guard !value.isEmpty else { return }
             out.append(NSAttributedString(string: key + ": ", attributes: [.font: bold, .foregroundColor: NSColor.secondaryLabelColor]))
-            out.append(NSAttributedString(string: value + "\n", attributes: [.font: normal]))
+            out.append(NSAttributedString(string: value + "\n", attributes: [.font: normal, .foregroundColor: NSColor.labelColor]))
         }
         if let node = summary {
             heading("Activity Under This Path")

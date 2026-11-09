@@ -65,3 +65,9 @@ the category icons. Decide on one icon set for the whole app so file activity lo
   vector (SVG/PDF) assets in an asset catalog.
 - [ ] Map file types to icons in one table (extension / UTType -> icon name) shared by list, inspector, tree and graph views.
 - [ ] Decision needed before the tree and graph views (P6, P7).
+
+## Dark mode checklist (learned 2026-11-09)
+- Attributed text MUST carry an explicit foreground colour (`NSColor.labelColor` / `.textColor`); without one it is drawn black. Set `textColor` and
+  `backgroundColor` explicitly on programmatic `NSTextView`s.
+- Never store `NSColor.xxx.cgColor` once; resolve it in `viewDidChangeEffectiveAppearance`.
+- Custom drawing: use semantic colours (`labelColor`, `textBackgroundColor`, `separatorColor`) and test both appearances.

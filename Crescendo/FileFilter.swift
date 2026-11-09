@@ -241,9 +241,17 @@ final class RuleRow: NSStackView, NSTextFieldDelegate {
     @objc private func removeClicked() { onRemove?(self) }
 }
 
+//= a stack with a thin border whose colour follows light / dark mode (a CGColor taken once would go stale when the appearance changes)
+final class BorderedStack: NSStackView {
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        effectiveAppearance.performAsCurrentDrawingAppearance { layer?.borderColor = NSColor.separatorColor.cgColor }
+    }
+}
+
 //= the filter editor: template menu, All/Any, rule rows, hidden folders
 final class FilterPanel: NSObject {
-    let view = NSStackView()
+    let view = BorderedStack()
     var onChange: (() -> Void)?
     var onRestoreHidden: (() -> Void)?
 

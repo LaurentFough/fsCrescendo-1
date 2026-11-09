@@ -184,6 +184,9 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
     //= read-only text that wraps to the width of its scroll view and grows downwards
     private func configureText(_ textView: NSTextView) {
         textView.isEditable = false
+        textView.textColor = .textColor //= adaptive colours stated explicitly (light and dark mode)
+        textView.drawsBackground = true
+        textView.backgroundColor = .textBackgroundColor
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
