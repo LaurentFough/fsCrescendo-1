@@ -54,3 +54,14 @@ or plain text, command-line tool for automation, graph visualisation of file act
 - [ ] Row tinting for moved and deleted rows; selection of both halves of a rename.
 - [ ] Drag a path from a row into a filter field or another app.
 - [ ] Tree and graph views (P6, P7).
+
+## Standardise on a file icon set (owner request 2026-11-09)
+Today the Path column and inspector use the Finder icons that macOS supplies for each file type (`NSWorkspace`), and SF Symbols for
+the category icons. Decide on one icon set for the whole app so file activity looks consistent (light and dark mode, tree and graph views).
+- [ ] Options to compare: keep system Finder icons (zero licensing, follows the user's macOS version, cannot be themed or used on
+  Linux/web) | a bundled open-source file-type set (consistent everywhere, works in exports and the graph view, adds assets to the
+  repo) | SF Symbols only (monochrome, consistent, limited file-type coverage).
+- [ ] For any bundled set: check the licence permits redistribution under this repo's MIT licence and note the attribution; prefer
+  vector (SVG/PDF) assets in an asset catalog.
+- [ ] Map file types to icons in one table (extension / UTType -> icon name) shared by list, inspector, tree and graph views.
+- [ ] Decision needed before the tree and graph views (P6, P7).
