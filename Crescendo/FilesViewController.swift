@@ -1,6 +1,7 @@
 import Cocoa
+import UniformTypeIdentifiers
 
-//= FilesViewController.swift  version 0.1.0 (2026-11-09)
+//= FilesViewController.swift  version 0.2.0 (2026-11-09)
 //= File activity in the style of a file-system monitor, shown inside the main window when the "File" segment is selected.
 //= Source: the cresc engine (`watch.start` with view "files"), fed by the event daemon (eslogger). Rows are
 //= cresc.filechange/1: created, deleted, modified, attributes, moved from / moved to, meta.
@@ -10,6 +11,7 @@ import Cocoa
 
 //= one displayed change
 struct FileRow {
+    var id = 0 //= ascending; lets the selection survive refreshes
     var category = "", eventType = "", ts = "", path = "", source = ""
     var pid = -1, ppid = -1, actorUid = -1, actorGid = -1, count = 1
     var process = "", processPath = "", signingId = ""
@@ -115,6 +117,10 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     private var visible = [FileRow]()
     private var search = ""
     private var reloadPending = false
+    private var nextRowId = 0
+    //= asked before scrolling to the newest row; the main window answers with its Auto-scroll checkbox
+    var autoscroll: () -> Bool = { true }
+    private static var iconCache = [String: NSImage]()
 
     //= widgets
     private let bannerLabel = NSTextField(wrappingLabelWithString: "")
@@ -123,7 +129,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     private let modeControl = NSSegmentedControl(labels: ["List", "Text"], trackingMode: .selectOne, target: nil, action: nil)
     private let cleanupPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let pauseButton = NSButton(title: "Pause", target: nil, action: nil)
-    private let inspectorButton = NSButton(title: "Inspector", target: nil, action: nil)
+    private let inspectorButton = NSButton(checkboxWithTitle: "Inspector", target: nil, action: nil)
     private let statusLabel = NSTextField(labelWithString: "stopped")
     private let table = FilesTable()
     private let listScroll = NSScrollView()
@@ -189,14 +195,16 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         pauseButton.target = self
         pauseButton.action = #selector(togglePause)
         pauseButton.toolTip = "Stop capturing now and resume later (Space does the same while the list has focus)"
-        inspectorButton.setButtonType(.pushOnPushOff)
         inspectorButton.state = .on
         inspectorButton.target = self
         inspectorButton.action = #selector(toggleInspector)
         inspectorButton.toolTip = "Show or hide the details of the selected change"
         statusLabel.textColor = .secondaryLabelColor
+        statusLabel.lineBreakMode = .byTruncatingTail
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let bar = NSStackView(views: [modeControl, cleanupPopup, statusLabel, pauseButton, inspectorButton])
+        statusLabel.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .horizontal)
+        //= the status text changes width on every refresh, so it goes LAST: nothing to its left can move under the pointer
+        let bar = NSStackView(views: [modeControl, cleanupPopup, pauseButton, inspectorButton, statusLabel])
         bar.orientation = .horizontal
 
         //= list
@@ -307,6 +315,25 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         return base.withSymbolConfiguration(configuration) ?? base
     }
 
+    //= ---- file type icons -----------------------------------------------------------------------------------
+    private func fileType(_ r: FileRow) -> UTType {
+        if ((r.mode ?? 0) & 0o170000) == 0o040000 { return .folder }
+        let ext = URL(fileURLWithPath: r.path).pathExtension.lowercased()
+        return ext.isEmpty ? .data : (UTType(filenameExtension: ext) ?? .data)
+    }
+
+    //= the Finder icon for the file's type (cached per type), a red cross for a deleted file, a bubble for markers
+    private func fileIcon(_ r: FileRow) -> NSImage {
+        if r.category == "meta" { return symbol("text.bubble.fill", .systemGray, "Meta Event") }
+        if r.category == "deleted" { return symbol("xmark.circle.fill", .systemRed, "Deleted") }
+        let type = fileType(r)
+        if let hit = FilesViewController.iconCache[type.identifier] { return hit }
+        let icon = (NSWorkspace.shared.icon(for: type).copy() as? NSImage) ?? NSWorkspace.shared.icon(for: type)
+        icon.size = NSSize(width: 16, height: 16)
+        FilesViewController.iconCache[type.identifier] = icon
+        return icon
+    }
+
     //= ---- capturing -----------------------------------------------------------------------------------------
     var isCapturing: Bool { capturing }
 
@@ -404,7 +431,10 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
     }
 
-    private func append(_ row: FileRow) {
+    private func append(_ newRow: FileRow) {
+        var row = newRow
+        nextRowId += 1
+        row.id = nextRowId
         rows.append(row)
         if rows.count > FilesViewController.maxRows { rows.removeFirst(rows.count - FilesViewController.maxRows); rebuildVisible() }
         else if matches(row) { visible.append(row) }
@@ -423,11 +453,19 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     private func reloadViews(scrollToEnd: Bool) {
+        let follow = scrollToEnd && autoscroll()
         if textScroll.isHidden {
+            //= reloadData() drops the selection; remember the selected rows by id and select them again
+            let selectedIds = Set(table.selectedRowIndexes.compactMap { $0 < visible.count ? visible[$0].id : nil })
             table.reloadData()
-            if scrollToEnd, !visible.isEmpty { table.scrollRowToVisible(visible.count - 1) }
+            if !selectedIds.isEmpty {
+                var indexes = IndexSet()
+                for (index, row) in visible.enumerated() where selectedIds.contains(row.id) { indexes.insert(index) }
+                if !indexes.isEmpty { table.selectRowIndexes(indexes, byExtendingSelection: false) }
+            }
+            if follow, !visible.isEmpty { table.scrollRowToVisible(visible.count - 1) }
         } else {
-            rebuildText()
+            rebuildText(scrollToEnd: follow)
         }
         if capturing { setStatus("capturing - \(visible.count) of \(rows.count) rows") }
     }
@@ -481,7 +519,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     //= ---- text view -----------------------------------------------------------------------------------------
-    private func rebuildText() {
+    private func rebuildText(scrollToEnd: Bool) {
         let font = NSFont.userFixedPitchFont(ofSize: 11) ?? NSFont.systemFont(ofSize: 11)
         let out = NSMutableAttributedString()
         for row in visible.suffix(5000) {
@@ -497,7 +535,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
             out.append(NSAttributedString(string: line, attributes: [.font: font, .foregroundColor: color]))
         }
         textView.textStorage?.setAttributedString(out)
-        textView.scrollToEndOfDocument(nil)
+        if scrollToEnd { textView.scrollToEndOfDocument(nil) }
     }
 
     private static func tag(_ category: String) -> String {
@@ -521,6 +559,22 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
             out.append(NSAttributedString(string: "Select a change to see its details.", attributes: [.font: normal, .foregroundColor: NSColor.secondaryLabelColor]))
             inspectorView.textStorage?.setAttributedString(out)
             return
+        }
+        if r.category != "meta" {
+            //= large file icon with the type name, centred, like a monitor's inspector
+            let type = fileType(r)
+            let big = (NSWorkspace.shared.icon(for: type).copy() as? NSImage) ?? NSWorkspace.shared.icon(for: type)
+            big.size = NSSize(width: 64, height: 64)
+            let attachment = NSTextAttachment()
+            attachment.image = big
+            attachment.bounds = NSRect(x: 0, y: 0, width: 64, height: 64)
+            let center = NSMutableParagraphStyle()
+            center.alignment = .center
+            let picture = NSMutableAttributedString(attachment: attachment)
+            picture.append(NSAttributedString(string: "\n" + (type.localizedDescription ?? type.preferredFilenameExtension ?? "File") + "\n"))
+            picture.addAttributes([.paragraphStyle: center, .font: normal, .foregroundColor: NSColor.secondaryLabelColor],
+                                  range: NSRange(location: 0, length: picture.length))
+            out.append(picture)
         }
         heading("Current Status")
         line("Path", r.path)
@@ -577,7 +631,9 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         switch id {
         case "pid": text = r.pid >= 0 ? String(r.pid) : "-"
         case "process": text = r.process
-        case "path": text = r.category == "moved_to" && !r.source.isEmpty ? r.path + "   <-  " + r.source : r.path
+        case "path":
+            text = r.category == "moved_to" && !r.source.isEmpty ? r.path + "   <-  " + r.source : r.path
+            cell.imageView?.image = fileIcon(r)
         case "inode": text = r.inode.map { String($0) } ?? "-"
         case "date": text = FileFormat.time(r.ts)
         default: break
@@ -597,6 +653,25 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
             cell.addSubview(image)
             cell.imageView = image
             NSLayoutConstraint.activate([image.centerXAnchor.constraint(equalTo: cell.centerXAnchor), image.centerYAnchor.constraint(equalTo: cell.centerYAnchor)])
+        } else if identifier.rawValue == "path" {
+            let image = NSImageView()
+            image.translatesAutoresizingMaskIntoConstraints = false
+            let label = NSTextField(labelWithString: "")
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.lineBreakMode = .byTruncatingMiddle
+            label.font = NSFont.systemFont(ofSize: 12)
+            cell.addSubview(image)
+            cell.addSubview(label)
+            cell.imageView = image
+            cell.textField = label
+            NSLayoutConstraint.activate([
+                image.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                image.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                image.widthAnchor.constraint(equalToConstant: 16), image.heightAnchor.constraint(equalToConstant: 16),
+                label.leadingAnchor.constraint(equalTo: image.trailingAnchor, constant: 5),
+                label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            ])
         } else {
             let label = NSTextField(labelWithString: "")
             label.translatesAutoresizingMaskIntoConstraints = false

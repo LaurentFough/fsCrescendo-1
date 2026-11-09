@@ -19,6 +19,7 @@ extension ViewController {
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             host.topAnchor.constraint(equalTo: eventFilter.bottomAnchor, constant: 14),
         ])
+        controller.autoscroll = { [weak self] in self?.autoscrollToggle.state != .off } //= the window's Auto-scroll checkbox
         controller.onCapturingChanged = { [weak self] capturing in self?.status = capturing ? .running : .stopped }
         controller.onNeedSetup = { (NSApp.delegate as? AppDelegate)?.showEventSetup(nil) }
         filesController = controller

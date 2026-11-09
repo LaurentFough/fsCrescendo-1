@@ -46,3 +46,11 @@ or plain text, command-line tool for automation, graph visualisation of file act
 - [ ] Real `eslogger` captures for create/rename to a NEW path, `uipc_connect`/`uipc_bind`, mount.
 - [ ] Baseline run of the original Crescendo in a SIP/AMFI-relaxed VM.
 - [ ] Remaining P0 audit items: COR-08, SEC-01, SEC-02, SEC-04, REL-01, BLD-01, BLD-03.
+
+## FSMonitor-style polish for the Files view (owner request 2026-11-09: "style it more like FSMonitor when we can")
+- [x] File-type icons in the Path column; a large file icon and type name at the top of the inspector.
+- [ ] Hide / reveal actions in the row menu: Reveal in Finder, Open in Terminal, Quick Look, Copy path (FSMonitor offers these).
+- [ ] "Today, 22:38" style date column option (ours shows local time with milliseconds).
+- [ ] Row tinting for moved and deleted rows; selection of both halves of a rename.
+- [ ] Drag a path from a row into a filter field or another app.
+- [ ] Tree and graph views (P6, P7).
