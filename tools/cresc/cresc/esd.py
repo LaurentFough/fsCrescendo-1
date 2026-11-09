@@ -14,7 +14,7 @@ import socket
 import threading
 from typing import Dict, Iterator, List, Sequence
 
-DEFAULT_SOCKET = "/var/run/com.loff.crescendo.esd.sock"
+DEFAULT_SOCKET = "/var/run/ca.forgeWorx.crescendo.esd.sock"
 DEFAULT_EVENTS = ("exec", "fork", "exit", "open", "close", "write", "create", "rename", "unlink", "truncate", "link")
 EVENT_NAME = re.compile(r"^[a-z_]{1,40}$")
 MAX_EVENTS = 40

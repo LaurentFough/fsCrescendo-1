@@ -3,15 +3,15 @@
 #= Installs / removes the Crescendo event daemon as a root LaunchDaemon (run with sudo; the Makefile does).
 #= Usage : esd-install.sh install --uid N --binary PATH
 #=         esd-install.sh remove
-#= Effect: copies the binary to /Library/PrivilegedHelperTools/com.loff.crescendo.esd (root:wheel 755) KEEPING its
+#= Effect: copies the binary to /Library/PrivilegedHelperTools/ca.forgeWorx.crescendo.esd (root:wheel 755) KEEPING its
 #=         signature (sign it first as your user: scripts/esd-sign.sh; root cannot use your keychain), writes
-#=         /Library/LaunchDaemons/com.loff.crescendo.esd.plist and loads it with launchctl bootstrap.
+#=         /Library/LaunchDaemons/ca.forgeWorx.crescendo.esd.plist and loads it with launchctl bootstrap.
 #=         The daemon is idle until the app asks it to start eslogger. Log: /var/log/crescendo-esd.log
 #= Exit  : 0 ok | 64 usage | 66 missing input | 70 failure | 77 not root
 set -eu
 
 VERSION="1.1.0"
-LABEL="com.loff.crescendo.esd"
+LABEL="ca.forgeWorx.crescendo.esd"
 BIN="/Library/PrivilegedHelperTools/$LABEL"
 PLIST="/Library/LaunchDaemons/$LABEL.plist"
 SOCK="/var/run/$LABEL.sock"

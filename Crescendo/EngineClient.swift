@@ -28,7 +28,7 @@ final class EngineClient {
     //= called once when the child exits (status), whatever the reason
     var onExit: ((Int32) -> Void)?
 
-    private let ioQueue = DispatchQueue(label: "com.loff.crescendo.engine")
+    private let ioQueue = DispatchQueue(label: "ca.forgeWorx.crescendo.engine")
     private var process: Process?
     private var input: FileHandle?
     private var nextId = 1

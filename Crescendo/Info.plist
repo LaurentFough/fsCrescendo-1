@@ -33,7 +33,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>com.loff.crescendo.recording</string>
+				<string>ca.forgeWorx.crescendo.recording</string>
 			</array>
 			<key>NSDocumentClass</key>
 			<string>$(PRODUCT_MODULE_NAME).RecordingDocument</string>
@@ -49,7 +49,7 @@
 			<key>UTTypeDescription</key>
 			<string>Crescendo Recording</string>
 			<key>UTTypeIdentifier</key>
-			<string>com.loff.crescendo.recording</string>
+			<string>ca.forgeWorx.crescendo.recording</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

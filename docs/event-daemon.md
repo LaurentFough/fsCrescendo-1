@@ -35,7 +35,7 @@ make esd-build          # swiftc, Command Line Tools are enough
 make esd-install        # sudo: copies the binary, writes the plist, launchctl bootstrap
 ```
 Then grant FDA to the daemon binary: System Settings > Privacy & Security > Full Disk Access > `+`, press
-Cmd-Shift-G and enter `/Library/PrivilegedHelperTools/com.loff.crescendo.esd`.
+Cmd-Shift-G and enter `/Library/PrivilegedHelperTools/ca.forgeWorx.crescendo.esd`.
 
 ```bash
 make esd-status         # JSON: state idle|running, version
@@ -63,7 +63,7 @@ The Events tab asks the daemon for `status` (which includes an `fda` probe) and 
   and reveals the daemon in Finder so you can drag it in;
 - ready -> the banner disappears. The check repeats whenever the app becomes active again.
 
-## Protocol (Unix socket `/var/run/com.loff.crescendo.esd.sock`)
+## Protocol (Unix socket `/var/run/ca.forgeWorx.crescendo.esd.sock`)
 | Client line | Reply |
 |---|---|
 | `status` | `{"esd":1,"ok":true,"state":"idle|running","version":"0.2.0","events":[...],"fda":true|false}` (`fda` absent = unknown) |

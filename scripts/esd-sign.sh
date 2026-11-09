@@ -11,7 +11,7 @@
 set -eu
 
 VERSION="1.0.0"
-IDENTIFIER="com.loff.crescendo.esd"
+IDENTIFIER="ca.forgeWorx.crescendo.esd"
 log() { printf '%s esd-sign[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$VERSION" "$1"; }
 die() { printf 'ERROR: %s\n' "$1" >&2; exit "${2:-70}"; }
 

@@ -56,15 +56,15 @@ class RealShapeTests(unittest.TestCase):
         self.assertEqual(self.ev["file.write"].target, "/private/var/log/com.apple.xpc.launchd/launchd.log")
 
     def test_create_rename_unlink_with_existing_file_destinations(self):
-        self.assertEqual(self.ev["file.create"].target, "/Users/me/.codex/tmp/arg0-macos/codex-arg0uFWsj1")
+        self.assertEqual(self.ev["file.create"].target, "/Users/me/.agent/tmp/arg0-macos/agent-arg0uFWsj1")
         r = self.ev["file.rename"]
-        self.assertEqual(r.target, "/Users/me/.local/share/fish/fish_historyqjt8SWcjji")
-        self.assertEqual(r.target2, "/Users/me/.local/share/fish/fish_history")
-        self.assertEqual(self.ev["file.unlink"].target, "/Users/me/.codex/tmp/arg0-macos/codex-arg0uFWsj1/.lock")
+        self.assertEqual(r.target, "/Users/me/.local/share/shell/shell_historyqjt8SWcjji")
+        self.assertEqual(r.target2, "/Users/me/.local/share/shell/shell_history")
+        self.assertEqual(self.ev["file.unlink"].target, "/Users/me/.agent/tmp/arg0-macos/agent-arg0uFWsj1/.lock")
 
     def test_third_party_process_identity(self):
         c = self.ev["file.create"]
-        self.assertEqual((c.name, c.signing_id, c.team_id, c.platform), ("codex", "codex", "TEAMID1234", False))
+        self.assertEqual((c.name, c.signing_id, c.team_id, c.platform), ("agent", "agent", "TEAMID1234", False))
 
     def test_responsible_process_is_captured(self):
         self.assertEqual(self.ev["file.create"].responsible_pid, 71710)                    #= the app that started the helper
@@ -76,12 +76,12 @@ class RealShapeTests(unittest.TestCase):
 
     def test_watch_command_on_the_real_shaped_file(self):
         env = dict(os.environ, PYTHONPATH=PKG_ROOT)
-        p = subprocess.run([sys.executable, "-m", "cresc", "watch", FIXTURE, "--app", "codex", "--json"], cwd=PKG_ROOT, env=env,
+        p = subprocess.run([sys.executable, "-m", "cresc", "watch", FIXTURE, "--app", "agent", "--json"], cwd=PKG_ROOT, env=env,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)
         kinds = [json.loads(l)["kind"] for l in p.stdout.splitlines()]
-        self.assertEqual(kinds, ["file.create", "file.unlink"])                           #= only codex's own events
-        p = subprocess.run([sys.executable, "-m", "cresc", "watch", FIXTURE, "--dir", "/Users/me/.local/share/fish", "--json"],
+        self.assertEqual(kinds, ["file.create", "file.unlink"])                           #= only agent's own events
+        p = subprocess.run([sys.executable, "-m", "cresc", "watch", FIXTURE, "--dir", "/Users/me/.local/share/shell", "--json"],
                            cwd=PKG_ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
         self.assertEqual([json.loads(l)["kind"] for l in p.stdout.splitlines()], ["file.rename"])
 

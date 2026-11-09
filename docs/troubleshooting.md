@@ -25,7 +25,7 @@ keywords:
 |---|---|---|
 | macOS says the app is damaged or from an unidentified developer | it is signed ad-hoc and not notarized | right-click the app > **Open** > **Open**, or `xattr -dr com.apple.quarantine /Applications/Crescendo.app` |
 | Banner: *event daemon is not installed* | helper not installed | click **Install daemon...** (admin password), or `make esd-install` from a source checkout |
-| Banner: *no Full Disk Access* | the daemon needs the permission to run `eslogger` | **Open Full Disk Access...**, drag `/Library/PrivilegedHelperTools/com.loff.crescendo.esd` in, switch it on; then press Start again |
+| Banner: *no Full Disk Access* | the daemon needs the permission to run `eslogger` | **Open Full Disk Access...**, drag `/Library/PrivilegedHelperTools/ca.forgeWorx.crescendo.esd` in, switch it on; then press Start again |
 | Full Disk Access works, then stops after you rebuild | an ad-hoc signature changes with every build | `make esd-install SIGN_IDENTITY=auto` (an Apple Development identity gives a stable signature) |
 | Start does nothing; status says *no event source* | daemon not reachable | `make esd-status` (JSON) and `make esd-log`; reinstall with `make esd-install` |
 | *eslogger exited with status ...* in the log | missing Full Disk Access, or a macOS older than 13 | grant Full Disk Access; check `sw_vers` |

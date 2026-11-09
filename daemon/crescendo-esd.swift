@@ -15,7 +15,7 @@ import Foundation
 //= Usage: crescendo-esd --uid N [--socket PATH] [--eslogger PATH]      (logs to stderr; launchd redirects it)
 
 let esdVersion = "0.2.0"
-let defaultSocket = "/var/run/com.loff.crescendo.esd.sock"
+let defaultSocket = "/var/run/ca.forgeWorx.crescendo.esd.sock"
 
 func logLine(_ text: String) {
     let stamp = ISO8601DateFormatter().string(from: Date())

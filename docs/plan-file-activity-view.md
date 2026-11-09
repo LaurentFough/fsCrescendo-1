@@ -149,7 +149,7 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
   view, Delete / Command-Delete hide and restore folders, right-click row menu.
 
 - P5 app side written (untested until built): Record button with pre-roll, `RecordingDocument` / `PlayerViewController` (document type
-  `com.loff.crescendo.recording`, Open Recording...), replay mode of the Files view. Server fix: `recording.play` answers before records flow.
+  `ca.forgeWorx.crescendo.recording`, Open Recording...), replay mode of the Files view. Server fix: `recording.play` answers before records flow.
   Still open: run-session recordings from the console, Export from the player window.
 
 - P6 written (untested until built): `FilesTree.swift` (PathNode/PathTree, outline with rolled-up counts, sort modes, Expand/Collapse All, inspector

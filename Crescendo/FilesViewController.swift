@@ -134,7 +134,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     required init?(coder _: NSCoder) { fatalError("not used") }
 
-    private static let daemonSocket = "/var/run/com.loff.crescendo.esd.sock"
+    private static let daemonSocket = "/var/run/ca.forgeWorx.crescendo.esd.sock"
     private static let maxRows = 20000
 
     private var watchId: String?

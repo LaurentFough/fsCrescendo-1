@@ -8,7 +8,7 @@
 | **crescendo-esd** (event daemon) | **root**, as a LaunchDaemon | on request, run `/usr/bin/eslogger` and stream its output to **your user only** |
 
 The daemon is idle until the app asks it to start. It accepts only event names made of `a-z` and `_`, runs only the configured `eslogger`,
-serves one stream at a time, and stops `eslogger` when the client disconnects. Its socket (`/var/run/com.loff.crescendo.esd.sock`) belongs to the
+serves one stream at a time, and stops `eslogger` when the client disconnects. Its socket (`/var/run/ca.forgeWorx.crescendo.esd.sock`) belongs to the
 installing user with mode `0600`, and every connection's uid is checked again with `getpeereid()`.
 
 ## Known limitation

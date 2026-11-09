@@ -58,7 +58,7 @@ open build/lite/Crescendo.app
 1. Open the app. Click the **File** segment, then **Start**.
 2. A banner says the **event daemon** is missing: click **Install daemon...** and enter your administrator password.
 3. A second banner asks for **Full Disk Access**: click **Open Full Disk Access...**, drag the highlighted
-   `com.loff.crescendo.esd` file into the list (or use the **+** button) and switch it on.
+   `ca.forgeWorx.crescendo.esd` file into the list (or use the **+** button) and switch it on.
 4. Come back to the app and press **Start** again. Rows appear as soon as anything on the Mac changes a file.
 
 If something does not work, see [docs/troubleshooting.md](docs/troubleshooting.md).

@@ -33,7 +33,7 @@ Contents: [Set up](#set-up) | [The main window](#the-main-window) | [The Files v
 1. Install the app (README: *Install*). Open it; a small icon appears in the menu bar and the main window opens.
 2. Live events need the **event daemon**, a helper that runs Apple's `eslogger` for you. Two banners guide you:
    - *"The event daemon is not installed"*: click **Install daemon...** and enter your administrator password (once).
-   - *"The daemon needs Full Disk Access"*: click **Open Full Disk Access...**, drag `com.loff.crescendo.esd` from the Finder window that opens into
+   - *"The daemon needs Full Disk Access"*: click **Open Full Disk Access...**, drag `ca.forgeWorx.crescendo.esd` from the Finder window that opens into
      System Settings > Privacy & Security > Full Disk Access, and switch it on.
    The banners appear in the Files view and in the Cresc Console's **Events** tab, and disappear when everything is in place.
 
@@ -171,8 +171,8 @@ Full list: [tools/cresc/README.md](../tools/cresc/README.md).
 | profiles and runs | `~/.local/share/crescendo/cresc` (`CRESC_HOME` overrides; older folders are moved here automatically) |
 | default sandbox write folder | `~/.local/state/crescendo/sandbox`, else `~/Library/Application Support/Crescendo/sandbox` |
 | recordings | `~/Library/Application Support/Crescendo/Recordings/` |
-| event daemon (installed) | `/Library/PrivilegedHelperTools/com.loff.crescendo.esd`, `/Library/LaunchDaemons/com.loff.crescendo.esd.plist` |
-| daemon socket and log | `/var/run/com.loff.crescendo.esd.sock` (owned by you, mode 0600), `/var/log/crescendo-esd.log` |
+| event daemon (installed) | `/Library/PrivilegedHelperTools/ca.forgeWorx.crescendo.esd`, `/Library/LaunchDaemons/ca.forgeWorx.crescendo.esd.plist` |
+| daemon socket and log | `/var/run/ca.forgeWorx.crescendo.esd.sock` (owned by you, mode 0600), `/var/log/crescendo-esd.log` |
 | app preferences | the app's preferences domain (filter templates, graph settings, last console values) |
 
 ## Keyboard and mouse

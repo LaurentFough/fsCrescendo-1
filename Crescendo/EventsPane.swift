@@ -42,7 +42,7 @@ final class EventsPane: NSObject, NSTableViewDataSource {
     private let bannerBox = NSStackView()
     private var bannerAction: (() -> Void)?
     private var pausedByUser = false
-    static let daemonSocket = "/var/run/com.loff.crescendo.esd.sock"
+    static let daemonSocket = "/var/run/ca.forgeWorx.crescendo.esd.sock"
     private let table = NSTableView()
     private let scroll = NSScrollView()
     private let columns: [(id: String, title: String, width: CGFloat)] = [
@@ -206,7 +206,7 @@ final class EventsPane: NSObject, NSTableViewDataSource {
             }
         } else if fda == false {
             showBanner("The daemon needs Full Disk Access to run eslogger. Click the button, then add "
-                + "/Library/PrivilegedHelperTools/com.loff.crescendo.esd to the list (drag it in from the Finder window "
+                + "/Library/PrivilegedHelperTools/ca.forgeWorx.crescendo.esd to the list (drag it in from the Finder window "
                 + "that opens) and switch it on.", button: "Open Full Disk Access...") { [weak self] in self?.openFullDiskAccess() }
         } else {
             bannerBox.isHidden = true
@@ -219,7 +219,7 @@ final class EventsPane: NSObject, NSTableViewDataSource {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
             NSWorkspace.shared.open(url)
         }
-        let daemon = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/com.loff.crescendo.esd")
+        let daemon = URL(fileURLWithPath: "/Library/PrivilegedHelperTools/ca.forgeWorx.crescendo.esd")
         NSWorkspace.shared.activateFileViewerSelecting([daemon])
     }
 
