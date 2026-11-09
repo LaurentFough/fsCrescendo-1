@@ -1,5 +1,5 @@
 #!/bin/sh
-#= capture-file-events.sh  version 1.0.0 (2026-11-09)
+#= capture-file-events.sh  version 1.0.1 (2026-11-09)
 #= Records REAL eslogger events for a scripted set of file actions, so the file-change parser can be validated:
 #=   create (new name) | rename (to a new name, over an existing file) | modify | chmod | utimes | xattr | chflags | hard link |
 #=   APFS clone | truncate | exchangedata | mkdir/rename/rmdir | unlink | unix socket bind+connect | (optional) disk image mount.
@@ -13,7 +13,7 @@
 #= Exit  : 0 ok | 64 usage | 66 missing tool | 70 capture failed | 77 not allowed
 set -eu
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 log() { printf '%s capture[%s] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$VERSION" "$1"; }
 die() { printf 'ERROR: %s\n' "$1" >&2; exit "${2:-70}"; }
 
@@ -45,13 +45,17 @@ cleanup() {
   stop_eslogger
   if [ "$KEEP" -eq 1 ]; then log "kept $WORK and $META (the raw capture in the second one is NOT redacted)"; else rm -rf "$WORK" "$META"; fi
 }
+STOPPED=0
 stop_eslogger() {
-  if [ -s "$PIDFILE" ]; then
-    pid=$(cat "$PIDFILE" 2>/dev/null || true)
-    case "$pid" in ''|*[!0-9]*) return 0 ;; esac
-    if [ "$(ps -p "$pid" -o comm= 2>/dev/null | sed 's|.*/||')" = eslogger ]; then sudo kill "$pid" 2>/dev/null || true; fi
-    : > "$PIDFILE"
+  #= the pid file belongs to root (root wrote it), so it is only READ here; a flag remembers that eslogger was stopped
+  if [ "$STOPPED" -eq 1 ] || [ ! -s "$PIDFILE" ]; then return 0; fi
+  pid=$(cat "$PIDFILE" 2>/dev/null || true)
+  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+  if [ "$(ps -p "$pid" -o comm= 2>/dev/null | sed 's|.*/||')" = eslogger ]; then
+    sudo kill "$pid" 2>/dev/null || true
   fi
+  STOPPED=1
+  return 0
 }
 trap cleanup EXIT INT TERM
 
@@ -76,6 +80,12 @@ wait_for() { #= wait_for TEXT : poll the raw capture for up to 15 s
     sleep 0.2; n=$((n + 1))
   done
   return 1
+}
+#= hdiutil prints deprecation warnings on newer macOS; show everything else it says
+hdi() {
+  if hdiutil "$@" >/dev/null 2>"$META/hdiutil.err"; then rc=0; else rc=$?; fi
+  grep -v 'is deprecated' "$META/hdiutil.err" >&2 || true
+  return $rc
 }
 cd "$WORK"
 touch crescendo-ready-marker
@@ -107,10 +117,10 @@ PYEOF
 if [ "$WITH_MOUNT" -eq 1 ]; then
   step "disk image: create, attach, detach"
   mkdir mnt
-  hdiutil create -size 8m -fs APFS -volname CrescCapture -ov t.dmg >/dev/null
-  hdiutil attach -nobrowse -mountpoint "$WORK/mnt" t.dmg >/dev/null
+  hdi create -size 8m -fs APFS -volname CrescCapture -ov t.dmg
+  hdi attach -nobrowse -mountpoint "$WORK/mnt" t.dmg
   sleep 1
-  hdiutil detach "$WORK/mnt" >/dev/null
+  hdi detach "$WORK/mnt"
 fi
 step "delete everything (unlink)";           rm -f hard.txt clone.txt renamed.txt ex1 ex2
 touch crescendo-done-marker
