@@ -155,6 +155,9 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
 - P6 written (untested until built): `FilesTree.swift` (PathNode/PathTree, outline with rolled-up counts, sort modes, Expand/Collapse All, inspector
   summary, Delete hides) and a Tree segment in the Files view and the player window. Next: P7 graph visualisation (native drawing).
 
+- P7 written (untested until built): `FilesGraph.swift` (GraphModel with cap / user / Apple-platform filters, GraphCanvas with horizontal tree and
+  sunburst layouts, zoom, PNG export) and a Graph segment in the Files view and the player window.
+
 ## 8. Full build and VM idea (see also docs/future-feature-adds.md)
 - A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no
   SIP-on workaround. For observation it adds little over `eslogger`; it adds real-time blocking (AUTH events), which the sandbox

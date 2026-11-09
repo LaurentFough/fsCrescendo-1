@@ -132,3 +132,14 @@ filter panel and hidden folders apply to it too, and it works the same in the pl
   path itself changed, the details of its latest change.
 - **Delete** hides the selected folder, **Command-Delete** brings the last hidden folder back; the right-click menu offers Reveal in Finder,
   Copy Path, Show Only This Folder and Hide This Folder.
+
+## Graph view (P7)
+The **Graph** segment draws the file activity natively, in two layouts (chosen in the graph toolbar):
+- **Horizontal Tree**: root on the left, branches to the right; each file shows its Finder icon and a badge with its number of changes, deleted files
+  a red cross. Single-child folder chains are merged ("Users/me/Library").
+- **Sunburst**: one ring per folder level; the angle of an arc is the share of all changes below that path (gaps are changes that are not drawn).
+- **Scale (default filters, each can be switched off)**: *Busiest 200 paths* (choices 50 / 100 / 200 / 500 / 1000 / all; folders on the way are added),
+  *Only my processes* (uid; or all users, or only root), *Hide Apple system processes* (programs signed by the operating system itself, i.e. platform
+  binaries). The status line says how many paths and rows are hidden, so nothing disappears silently.
+- Click a node to see its activity summary in the inspector; hover for counts; **Fit** / **100%** / pinch to zoom; **Save Image...** writes a PNG.
+- The graph is built from the same filtered rows as the list (the Filter panel and hidden folders apply first).

@@ -53,7 +53,7 @@ or plain text, command-line tool for automation, graph visualisation of file act
 - [ ] "Today, 22:38" style date column option (ours shows local time with milliseconds).
 - [ ] Row tinting for moved and deleted rows; selection of both halves of a rename.
 - [ ] Drag a path from a row into a filter field or another app.
-- [x] Tree view with counts (P6). [ ] Graph view (P7): node-link drawing of the same tree, badges with event counts, red cross for deleted.
+- [x] Tree view with counts (P6). [x] Graph view (P7): horizontal tree and sunburst, badges, red cross for deleted. [ ] Ideas: animate new changes, node-link radial layout, time slider.
 
 ## Standardise on a file icon set (owner request 2026-11-09)
 Today the Path column and inspector use the Finder icons that macOS supplies for each file type (`NSWorkspace`), and SF Symbols for

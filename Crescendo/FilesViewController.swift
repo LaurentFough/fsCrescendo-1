@@ -1,7 +1,7 @@
 import Cocoa
 import UniformTypeIdentifiers
 
-//= FilesViewController.swift  version 0.5.0 (2026-11-09)
+//= FilesViewController.swift  version 0.6.0 (2026-11-09)
 //= File activity in the style of a file-system monitor, shown inside the main window when the "File" segment is selected.
 //= Source: the cresc engine (`watch.start` with view "files"), fed by the event daemon (eslogger). Rows are
 //= cresc.filechange/1: created, deleted, modified, attributes, moved from / moved to, meta.
@@ -14,6 +14,7 @@ struct FileRow {
     var id = 0 //= ascending; lets the selection survive refreshes
     var category = "", eventType = "", ts = "", path = "", source = ""
     var pid = -1, ppid = -1, actorUid = -1, actorGid = -1, count = 1
+    var platform = false //= the acting program is an Apple platform binary (signed by the OS)
     var process = "", processPath = "", signingId = ""
     var inode: Int64?, device: Int64?, mode: Int?, uid: Int?, gid: Int?, size: Int64?
     var created = "", modified = ""
@@ -42,6 +43,7 @@ struct FileRow {
         process = proc["name"] as? String ?? ""
         processPath = proc["path"] as? String ?? ""
         signingId = proc["signing_id"] as? String ?? ""
+        platform = proc["platform"] as? Bool ?? false
         actorUid = proc["uid"] as? Int ?? -1
         actorGid = proc["gid"] as? Int ?? -1
     }
@@ -155,7 +157,9 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     private let bannerLabel = NSTextField(wrappingLabelWithString: "")
     private let bannerButton = NSButton(title: "Open setup", target: nil, action: nil)
     private let bannerBox = NSStackView()
-    private let modeControl = NSSegmentedControl(labels: ["List", "Text", "Tree"], trackingMode: .selectOne, target: nil, action: nil)
+    private let modeControl = NSSegmentedControl(labels: ["List", "Text", "Tree", "Graph"], trackingMode: .selectOne, target: nil, action: nil)
+    private let graphView = FilesGraphView()
+    private var graphActive: Bool { modeControl.selectedSegment == 3 }
     private let treeView = FilesTreeView()
     private var treeActive: Bool { modeControl.selectedSegment == 2 }
     private let cleanupPopup = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -218,7 +222,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         modeControl.target = self
         modeControl.action = #selector(modeChanged)
         modeControl.toolTip = "List: one row per change. Text: the same rows as plain text you can select and copy. "
-            + "Tree: the changed paths as folders with change counts."
+            + "Tree: the changed paths as folders with change counts. Graph: the same as a drawing, as a horizontal tree or a sunburst."
         cleanupPopup.addItems(withTitles: ["No Cleanup", "Coalesce Repeats", "Prune Redundant Events"])
         cleanupPopup.target = self
         cleanupPopup.action = #selector(cleanupChanged)
@@ -310,6 +314,16 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
             treeHost.leadingAnchor.constraint(equalTo: left.leadingAnchor), treeHost.trailingAnchor.constraint(equalTo: left.trailingAnchor),
             treeHost.topAnchor.constraint(equalTo: left.topAnchor), treeHost.bottomAnchor.constraint(equalTo: left.bottomAnchor),
         ])
+        let graphHost = graphView.view
+        graphHost.translatesAutoresizingMaskIntoConstraints = false
+        graphHost.isHidden = true
+        left.addSubview(graphHost)
+        NSLayoutConstraint.activate([
+            graphHost.leadingAnchor.constraint(equalTo: left.leadingAnchor), graphHost.trailingAnchor.constraint(equalTo: left.trailingAnchor),
+            graphHost.topAnchor.constraint(equalTo: left.topAnchor), graphHost.bottomAnchor.constraint(equalTo: left.bottomAnchor),
+        ])
+        graphView.iconFor = { [weak self] node in self?.treeIcon(node) ?? NSImage() }
+        graphView.onSelect = { [weak self] node in self?.treeSelected(node) }
         treeView.iconFor = { [weak self] node in self?.treeIcon(node) ?? NSImage() }
         treeView.onSelect = { [weak self] node in self?.treeSelected(node) }
         treeView.onHideFolder = { [weak self] dir in self?.hideFolder(dir) }
@@ -593,7 +607,9 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     private func reloadViews(scrollToEnd: Bool) {
         let follow = scrollToEnd && autoscroll()
-        if treeActive {
+        if graphActive {
+            graphView.update(visible)
+        } else if treeActive {
             treeView.reload()
         } else if textScroll.isHidden {
             //= reloadData() drops the selection; remember the selected rows by id and select them again
@@ -799,6 +815,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         listScroll.isHidden = mode != 0
         textScroll.isHidden = mode != 1
         treeView.view.isHidden = mode != 2
+        graphView.view.isHidden = mode != 3
         if mode == 2 { treeView.tree.rebuild(visible) } //= the tree is only maintained while it is shown
         reloadViews(scrollToEnd: false)
     }
