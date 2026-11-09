@@ -310,6 +310,52 @@ def cmd_capture_filter(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_recording(args: argparse.Namespace) -> int:
+    """Inspect, verify, export or replay a .crescrec recording."""
+    from . import recording as rec
+    path = os.path.abspath(args.file)
+    try:
+        if args.rec_cmd == "info":
+            info = rec.summarise(path)
+            if args.json:
+                emit_json(dict(info, schema=SCHEMAS["recording"]))
+            else:
+                h = info["header"] or {}
+                print("%s: kind %s, created %s, %d record(s), %.1f s, %s" % (os.path.basename(path), h.get("kind"), h.get("created"),
+                      info["records"], info["duration_s"], "intact" if info["ok"] else "PROBLEMS"))
+                print("by type    : %s" % json.dumps(info["by_type"], sort_keys=True))
+                print("by category: %s" % json.dumps(info["by_category"], sort_keys=True))
+                for problem in info["problems"]:
+                    print("  - %s" % problem)
+            return 0 if info["ok"] else 1
+        if args.rec_cmd == "verify":
+            info = rec.verify_recording(path)
+            print("%s: %d record(s), %s" % ("OK" if info["ok"] else "FAILED", info["records"], "complete" if info["complete"] else "NO FOOTER (incomplete)"))
+            for problem in info["problems"]:
+                print("  - %s" % problem)
+            return 0 if info["ok"] else 1
+        if args.rec_cmd == "export":
+            out = os.path.abspath(args.output)
+            result = rec.export_recording(path, out, args.format, force=args.force)
+            print("%s: %d row(s) as %s" % (result["path"], result["rows"], result["format"]))
+            return 0
+        #= play: print the change rows at their recorded cadence
+        done = threading.Event()
+
+        def push(batch, position, reset, ended):
+            for r in batch:
+                data = r.get("data") or {}
+                print(rec.change_line(data) if r.get("type") == "change" else json.dumps(r, sort_keys=True), flush=True)
+            if ended:
+                done.set()
+        player = rec.Player(path, push, speed=args.speed, start_t=args.start, max_gap=args.max_gap)
+        player.start()
+        done.wait()
+        return 0
+    except rec.RecordingError as exc:
+        raise CliError(str(exc), 66)
+
+
 def cmd_verify_bundle(args: argparse.Namespace) -> int:
     from .export import verify_bundle
     result = verify_bundle(os.path.abspath(args.bundle))
@@ -602,6 +648,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-redact", action="store_true", help="keep your home folder path instead of replacing it with ~")
     p.add_argument("--force", action="store_true", help="replace an existing output file")
     p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_export)
+
+    p = sp.add_parser("recording", help="inspect, verify, export or replay a .crescrec recording")
+    add_common(p); rs = p.add_subparsers(dest="rec_cmd", required=True)
+    for name in ("info", "verify", "export", "play"):
+        q = rs.add_parser(name); q.add_argument("file")
+        if name in ("info",):
+            q.add_argument("--json", action="store_true")
+        if name == "export":
+            q.add_argument("-o", "--output", required=True); q.add_argument("--format", choices=("text", "csv", "json", "jsonl"), default="text")
+            q.add_argument("--force", action="store_true")
+        if name == "play":
+            q.add_argument("--speed", type=float, default=1.0); q.add_argument("--start", type=float, default=0.0)
+            q.add_argument("--max-gap", type=float, default=2.0, dest="max_gap", help="longest pause kept, in seconds (default 2)")
+    p.set_defaults(func=cmd_recording)
 
     p = sp.add_parser("verify-bundle", help="check an evidence bundle against its manifest")
     add_common(p); p.add_argument("bundle"); p.add_argument("--json", action="store_true"); p.set_defaults(func=cmd_verify_bundle)

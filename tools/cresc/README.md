@@ -58,6 +58,7 @@ Non-interactive pieces (what a GUI calls):
 | `cresc loop NAME ...` | interactive run / grant / restart |
 | `cresc export NAME [--run N] [-o FILE.zip] [--events FILE] [--no-redact]` | evidence bundle of one run: record, output, denials, analysis, profile, SHA-256 manifest (`cresc.bundle/1`) |
 | `cresc verify-bundle FILE.zip` | check a bundle against its manifest (exit 1 on any difference) |
+| `cresc recording info\|verify\|export\|play FILE.crescrec` | inspect, verify (hash), export (text / csv / json / jsonl) or replay a recording at its recorded cadence (`--speed`, `--start`, `--max-gap`) |
 | `cresc serve` | JSON-lines interface on stdin/stdout for a GUI, see [PROTOCOL.md](PROTOCOL.md) |
 | `cresc watch --files [--cleanup none\|coalesce\|prune] [--cleanup-window S]` | file-change view (created / deleted / modified / attributes / moved) of `eslogger create rename unlink close ...` input; `prune` hides temp files and collapses atomic saves (`cresc.filechange/1` with `--json`) |
 | `cresc watch [FILE|-] [--app/--dir/--file/--pid ...]` | live or replayed event view from `eslogger` JSON (`--json`: `cresc.event/1`) |

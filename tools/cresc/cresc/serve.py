@@ -8,6 +8,7 @@
 #= Limits: request lines are capped, parameters are validated, one bad request never stops the server.
 from __future__ import annotations
 
+import collections
 import json
 import os
 import select
@@ -21,6 +22,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple
 
 from . import SCHEMAS, __version__, esd, filechange
 from .cleanup import MODES as CLEANUP_MODES, Cleaner
+from . import recording
 from .classify import path_entries
 from .cli import CliError, apply_grants, manual_item, select_for_grant
 from .denials import fold, parse_lines
@@ -145,6 +147,10 @@ def line_source(path: str, stop: threading.Event, follow: bool) -> Iterator[str]
         os.close(fd)
 
 
+RING_ROWS = 50000                      #= newest changes kept per files watch, the source of a recording's pre-roll
+MAX_PLAYERS = 4
+
+
 class WatchHandle:
     def __init__(self, watch_id: str):
         self.id = watch_id
@@ -152,6 +158,9 @@ class WatchHandle:
         self.stats = Stats()
         self.thread: Optional[threading.Thread] = None
         self.watcher: Optional[LogWatcher] = None
+        self.ring: "collections.deque" = collections.deque(maxlen=RING_ROWS)     #= (time.monotonic(), change dict)
+        self.recorders: List[Any] = []
+        self.meta: Dict[str, Any] = {}
 
 
 #= ---- the server -------------------------------------------------------------------------------------------
@@ -165,6 +174,8 @@ class Server:
         self._start_lock = threading.Lock()
         self.runs: Dict[Tuple[str, int], threading.Event] = {}
         self.watches: Dict[str, WatchHandle] = {}
+        self.recorders: Dict[str, Tuple[Any, WatchHandle]] = {}
+        self.players: Dict[str, Any] = {}
         self.threads: List[threading.Thread] = []
         self.shutdown = threading.Event()
         self.methods: Dict[str, Callable[[Dict], Dict]] = {
@@ -175,6 +186,9 @@ class Server:
             "triage.run": self.m_triage_run, "triage.lines": self.m_triage_lines,
             "run.start": self.m_run_start, "run.stop": self.m_run_stop, "run.list": self.m_run_list,
             "run.get": self.m_run_get, "run.output": self.m_run_output, "run.compare": self.m_run_compare,
+            "recording.start": self.m_recording_start, "recording.stop": self.m_recording_stop, "recording.open": self.m_recording_open,
+            "recording.verify": self.m_recording_verify, "recording.play": self.m_recording_play,
+            "recording.control": self.m_recording_control, "recording.export": self.m_recording_export,
             "run.export": self.m_run_export, "bundle.verify": self.m_bundle_verify, "esd.status": self.m_esd_status, "watch.start": self.m_watch_start, "watch.stop": self.m_watch_stop, "watch.stats": self.m_watch_stats,
         }
 
@@ -217,6 +231,8 @@ class Server:
                 cancel.set()
             for w in self.watches.values():
                 w.stop.set()
+            for player in self.players.values():
+                player.stop()
             threads = list(self.threads)
         deadline = time.time() + 8
         for t in threads:
@@ -551,6 +567,8 @@ class Server:
             if len([w for w in self.watches.values() if w.thread and w.thread.is_alive()]) >= MAX_WATCHES:
                 raise ApiError("limit", "at most %d watches at a time" % MAX_WATCHES)
             handle = WatchHandle(uuid.uuid4().hex[:12])
+            handle.meta = {"view": view, "cleanup": cleanup, "source": {"socket": sock_path} if sock_path else {"file": path},
+                           "scopes": [{"kind": s.kind, "value": s.value} for s in scopes], "kinds": p_list(p, "kinds")}
             self.watches[handle.id] = handle
         if denials:
             def on_denial(d) -> None:
@@ -565,7 +583,11 @@ class Server:
 
         def push_changes(rows) -> None:
             for change in rows:
-                self.push("watch.change", {"watch_id": handle.id, "change": change.to_dict()})
+                d = change.to_dict()
+                self.push("watch.change", {"watch_id": handle.id, "change": d})
+                handle.ring.append((time.monotonic(), d))
+                for rec in list(handle.recorders):
+                    rec.write("change", d)
 
         def emit(ev) -> None:
             if view == "files":
@@ -577,7 +599,10 @@ class Server:
                             rows = cleaner.feed(change, time.monotonic())
                         push_changes(rows)
             else:
-                self.push("watch.event", {"watch_id": handle.id, "event": ev.to_dict()})
+                d = ev.to_dict()
+                self.push("watch.event", {"watch_id": handle.id, "event": d})
+                for rec in list(handle.recorders):
+                    rec.write("event", d)
 
         def marker(text: str) -> None:
             if view == "files":
@@ -616,6 +641,7 @@ class Server:
                 if tick is not None:
                     tick.join(2)
                 marker("Recording stopped")
+                self.finish_recorders(handle)
                 self.push("watch.ended", {"watch_id": handle.id, "stats": handle.stats.to_dict()})
 
         handle.thread = threading.Thread(target=worker, daemon=True)
@@ -631,6 +657,123 @@ class Server:
         if w is None:
             raise ApiError("not_found", "no such watch: %s" % wid)
         return w
+
+    #= ---- methods: recordings -------------------------------------------------------------------------------
+    def finish_recorders(self, handle: WatchHandle) -> None:
+        """A watch ended: finish the recordings that were attached to it."""
+        for rec in list(handle.recorders):
+            summary = rec.close()
+            handle.recorders.remove(rec)
+            rid = next((k for k, (r, _h) in self.recorders.items() if r is rec), None)
+            if rid is not None:
+                self.recorders.pop(rid, None)
+                self.push("recording.finished", dict(summary, recording_id=rid, reason="watch ended"))
+
+    def m_recording_start(self, p: Dict) -> Dict:
+        """Record what a running watch emits (file changes, or events for the events view). `pre_roll` seconds of the
+        newest rows are written first (files view)."""
+        handle = self._watch(p)
+        path = p_str(p, "path")
+        pre_roll = p_num(p, "pre_roll", default=0.0, lo=0, hi=3600)
+        header = recording.make_header(kind="live-capture", source=handle.meta.get("source"), scope=handle.meta.get("scopes"),
+                                       cleanup=handle.meta.get("cleanup", "none"), filters={"kinds": handle.meta.get("kinds", [])},
+                                       notes=p_str(p, "notes", required=False, default="") or "",
+                                       include_host=p_bool(p, "include_host", default=True))
+        try:
+            rec = recording.Recorder(path, header, force=p_bool(p, "force"))
+        except recording.RecordingError as exc:
+            raise ApiError("session_error", str(exc))
+        preroll = 0
+        if pre_roll > 0 and handle.ring:
+            now = time.monotonic()
+            rows = [(a, d) for a, d in list(handle.ring) if now - a <= pre_roll]
+            if rows:
+                rec.rebase(rows[0][0])
+                for arrival, d in rows:
+                    rec.write("change", d, t=arrival - rows[0][0])
+                preroll = len(rows)
+        handle.recorders.append(rec)
+        rid = uuid.uuid4().hex[:12]
+        with self._lock:
+            self.recorders[rid] = (rec, handle)
+        return {"recording_id": rid, "path": path, "pre_roll_rows": preroll, "schema": SCHEMAS["recording"]}
+
+    def m_recording_stop(self, p: Dict) -> Dict:
+        rid = p_str(p, "recording_id")
+        with self._lock:
+            entry = self.recorders.pop(rid, None)
+        if entry is None:
+            raise ApiError("not_found", "no such recording: %s" % rid)
+        rec, handle = entry
+        if rec in handle.recorders:
+            handle.recorders.remove(rec)
+        return dict(rec.close(), recording_id=rid, schema=SCHEMAS["recording"])
+
+    @staticmethod
+    def _recording_path(p: Dict, key: str = "path") -> str:
+        path = p_str(p, key)
+        if not os.path.isabs(path):
+            raise ApiError("invalid_params", "%s must be absolute" % key)
+        return path
+
+    def m_recording_open(self, p: Dict) -> Dict:
+        try:
+            return recording.summarise(self._recording_path(p))
+        except recording.RecordingError as exc:
+            raise ApiError("session_error", str(exc))
+
+    def m_recording_verify(self, p: Dict) -> Dict:
+        info = recording.verify_recording(self._recording_path(p))
+        return {"ok": info["ok"], "complete": info["complete"], "records": info["records"], "problems": info["problems"]}
+
+    def m_recording_export(self, p: Dict) -> Dict:
+        try:
+            return recording.export_recording(self._recording_path(p), self._recording_path(p, "out"),
+                                              p_str(p, "format", required=False, default="jsonl") or "jsonl", force=p_bool(p, "force"))
+        except recording.RecordingError as exc:
+            raise ApiError("session_error", str(exc))
+
+    def m_recording_play(self, p: Dict) -> Dict:
+        """Replay a recording as `recording.records` push events {play_id, records, position, reset, ended}."""
+        path = self._recording_path(p)
+        speed = p_num(p, "speed", default=1.0, lo=0.05, hi=1000)
+        start_t = p_num(p, "start_t", default=0.0, lo=0, hi=10 ** 9)
+        max_gap = p_num(p, "max_gap", default=2.0, lo=0, hi=60)
+        with self._lock:
+            if len([pl for pl in self.players.values() if not pl.finished]) >= MAX_PLAYERS:
+                raise ApiError("limit", "at most %d recordings play at once" % MAX_PLAYERS)
+        pid = uuid.uuid4().hex[:12]
+
+        def push_fn(batch: List[Dict], position: float, reset: bool, ended: bool) -> None:
+            self.push("recording.records", {"play_id": pid, "records": batch, "position": round(position, 6), "reset": reset, "ended": ended})
+        try:
+            player = recording.Player(path, push_fn, speed=speed, start_t=start_t, max_gap=max_gap)
+        except recording.RecordingError as exc:
+            raise ApiError("session_error", str(exc))
+        with self._lock:
+            self.players[pid] = player
+        player.start()
+        return {"play_id": pid, "duration_s": round(player.duration, 6), "records": len(player.records)}
+
+    def m_recording_control(self, p: Dict) -> Dict:
+        with self._lock:
+            player = self.players.get(p_str(p, "play_id"))
+        if player is None:
+            raise ApiError("not_found", "no such player")
+        action = p_str(p, "action")
+        if action == "pause":
+            player.pause()
+        elif action == "resume":
+            player.resume()
+        elif action == "seek":
+            player.seek(p_num(p, "value", required=True, lo=0, hi=10 ** 9))
+        elif action == "speed":
+            player.set_speed(p_num(p, "value", required=True, lo=0.05, hi=1000))
+        elif action == "stop":
+            player.stop()
+        else:
+            raise ApiError("invalid_params", "action must be pause, resume, seek, speed or stop")
+        return {"ok": True, "action": action}
 
     def m_watch_stop(self, p: Dict) -> Dict:
         w = self._watch(p)

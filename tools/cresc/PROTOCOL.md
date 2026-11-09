@@ -73,6 +73,12 @@ Names are letters, digits, `.`, `_`, `-` (profiles). Paths must be absolute. `ru
 | `run.compare` | `name`, `a`, `b` | `resolved`, `new`, `persisting`, `a`, `b` |
 | `run.export` | `name`, `run?`, `path?` (absolute `.zip`), `events_file?`, `redact?` (default true), `force?` | `path`, `sha256`, `bytes`, `top`, `files`: an evidence bundle of that run (`cresc.bundle/1`) |
 | `bundle.verify` | `path` | `ok`, `checked`, `problems[]` |
+| `recording.start` | `watch_id`, `path` (absolute `.crescrec`), `pre_roll?` (s, 0-3600; newest rows of the watch written first), `notes?`, `include_host?`, `force?` | `recording_id`, `path`, `pre_roll_rows`: records what the running watch emits |
+| `recording.stop` | `recording_id` | `path`, `records`, `bytes`, `duration_s`, `file_sha256`, `truncated` (also sent as `recording.finished` when the watch ends) |
+| `recording.open` / `recording.verify` | `path` | header, `records`, `duration_s`, `by_type`, `by_category`, `ok`, `complete`, `problems` / `ok`, `complete`, `records`, `problems` |
+| `recording.play` | `path`, `speed?` (0.05-1000), `start_t?`, `max_gap?` (s, idle gaps longer than this are shortened) | `play_id`, `duration_s`, `records`; progress arrives as `recording.records` events |
+| `recording.control` | `play_id`, `action` (`pause`, `resume`, `seek`, `speed`, `stop`), `value?` | `{ok, action}`; `seek` pushes a first batch with `reset: true` holding everything up to that time |
+| `recording.export` | `path`, `out`, `format?` (`text`, `csv`, `json`, `jsonl`), `force?` | `path`, `format`, `rows`, `bytes` |
 | `esd.status` | `socket?` | `available`, and when reachable `state`, `version`, `fda` |
 | `watch.start` | `source: {file, follow?} or {socket, events?}`, `view?` (`events`/`files`), `strip_data_volume?`, `cleanup?` (`none`/`coalesce`/`prune`, files view), `cleanup_window?` (0-60 s, default 2), `scopes?: [{kind, value}]`, `no_follow?`, `mute?[]`, `no_mute?`, `kinds?[]`, `denials?[]`, `settle?` | `watch_id` |
 | `watch.stop` / `watch.stats` | `watch_id` | `stopping` / `running`, `stats` |
@@ -100,6 +106,8 @@ The server never runs as root and never starts `eslogger` itself. A privileged h
 | `run.error` | `name`, `run`, `message` |
 | `watch.event` | `watch_id`, `event` (`cresc.event/1`; denials appear with `kind: "sandbox.deny"`) |
 | `watch.change` | `watch_id`, `change` (`cresc.filechange/1`: `category` created / deleted / modified / attributes / moved_from / moved_to / meta; `path`, `source_path`, `file{inode, device, mode, uid, gid, size, created, modified}`, `process{pid, ppid, name, path, signing_id, uid, gid}`); sent instead of `watch.event` when `watch.start` has `view: "files"`, with meta rows "Recording started" / "Recording stopped" |
+| `recording.records` | `play_id`, `records: [{type, t, data}]`, `position`, `reset`, `ended`: replayed records; `reset: true` means clear the client's rows first |
+| `recording.finished` | `recording_id`, `path`, `records`, `file_sha256`, `reason`: a recording ended because its watch ended |
 | `watch.ended` / `watch.error` | `watch_id`, `stats: {read, shown, skipped_lines, dropped, by_kind}` / `message` |
 
 ## Example

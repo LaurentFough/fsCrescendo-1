@@ -141,6 +141,10 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
 - P3 first version written (untested until built): `FilesViewController` shown by the File segment of the main window; shared
   `EngineClient.shared`; list, text, legend, inspector, cleanup popup, pause/resume.
 
+- P5 engine side done (cresc 0.7.0): `.crescrec` format with SHA-256 footer, `Recorder` (tees a running watch, pre-roll from a
+  50,000-row ring), verification, export, `Player` (speed, pause, seek with reset batches, idle-gap compression), server methods
+  `recording.*`, CLI `cresc recording ...`. Not yet: app UI (Record button, player window), run-session recordings.
+
 ## 8. Full build and VM idea (see also docs/future-feature-adds.md)
 - A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no
   SIP-on workaround. For observation it adds little over `eslogger`; it adds real-time blocking (AUTH events), which the sandbox

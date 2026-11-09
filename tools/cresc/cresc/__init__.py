@@ -2,7 +2,7 @@
 #= Sandbox-denial triage, rule synthesis, profile versioning and managed sessions for macOS.
 #= Standard library only; Python 3.9+. Everything outside session.py is pure logic and testable on any OS.
 #= Out of scope on purpose: anything that needs Apple's Endpoint Security entitlement.
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 #= JSON schemas emitted by the CLI (the contract a GUI can rely on)
 SCHEMAS = {
@@ -13,4 +13,5 @@ SCHEMAS = {
     "event": "cresc.event/1",
     "bundle": "cresc.bundle/1",
     "filechange": "cresc.filechange/1",
+    "recording": "cresc.recording/1",
 }
