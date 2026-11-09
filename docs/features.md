@@ -34,7 +34,8 @@ The Swift app cannot be compiled or run in the automated environment used to wri
 |---|---|---|---|---|
 | Build and launch the lite app | `make build-lite` | Xcode | Verified (2026-11-08) | README |
 | Menu bar icon, build line (version, build number, commit) | menu bar | | Awaiting test | user guide |
-| Event daemon install, status, Full Disk Access banner | Files view, Console > Events | admin password, FDA | Verified (2026-11-08) | [event-daemon](event-daemon.md) |
+| Event daemon: `make esd-install`, `make esd-status` | terminal | admin password, FDA | Verified (2026-11-08) | [event-daemon](event-daemon.md) |
+| In-app banners: Install daemon..., Open Full Disk Access... | Files view, Console > Events | admin password, FDA | Awaiting test | [event-daemon](event-daemon.md) |
 | Live file activity: Start / Stop, List, Text, inspector | main window > File | daemon | Verified (2026-11-09) | user guide |
 | Auto-scroll honoured, selection kept while capturing | File | daemon | Awaiting test (fixed 2026-11-09) | |
 | File-type icons in the Path column and inspector | File | | Awaiting test | |
@@ -54,10 +55,10 @@ The Swift app cannot be compiled or run in the automated environment used to wri
 | Feature | Where | Needs | Status |
 |---|---|---|---|
 | Engine starts, status line | Console header | Python 3 | Verified (2026-11-08) |
-| Sessions: run under a sandbox profile, write folders, arguments, Start / Stop / Restart | Console > Sessions | `/usr/bin/sandbox-exec` | Engine Tested; app Verified (2026-11-08) |
-| Denials: candidates, grant (selected / low / medium / by hand), grant and restart, compare | Console > Denials | | Engine Tested; app partly Verified |
-| Profile history, diff, revoke | Console > Profile | | Verified (layout 2026-11-09) |
-| Events tab (scope, kinds) | Console > Events | daemon | Verified (2026-11-08) |
+| Sessions: run under a sandbox profile, write folders, arguments, Start / Stop / Restart | Console > Sessions | `/usr/bin/sandbox-exec` | Engine Tested; real runs from the command line Verified (2026-11-07); app Awaiting test |
+| Denials: candidates, grant (selected / low / medium / by hand), grant and restart, compare | Console > Denials | | Engine Tested; app Awaiting test |
+| Profile history, diff, revoke | Console > Profile | | History display Verified (2026-11-09); diff and revoke Awaiting test |
+| Events tab (scope, kinds) | Console > Events | daemon | Awaiting test |
 | Evidence bundle export and verify | Console > Denials | | Engine Tested; app Awaiting test |
 | Defaults: store in `~/.local/share/crescendo/cresc`, write folder in `~/.local/state/crescendo/sandbox` | | | Engine Tested; app Awaiting test |
 
