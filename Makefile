@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.11.0  (2026-11-09)
+#= Makefile  -- version 1.12.0  (2026-11-09)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.11.0
+MAKEFILE_VERSION := 1.12.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -54,7 +54,8 @@ export NAMES LAST ES_EVENTS TEAM BUILD_MODE SIGN FORCE CONFIRM
 BUILD_NUMBER := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
 BUILD_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 BUILD_DATE   := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-VERSION_FLAGS := CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) CRESCENDO_BUILD_COMMIT=$(BUILD_COMMIT) CRESCENDO_BUILD_DATE=$(BUILD_DATE)
+#= APP_VERSION=1.2.3 also sets the marketing version (the release workflow does this from the tag)
+VERSION_FLAGS := CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) CRESCENDO_BUILD_COMMIT=$(BUILD_COMMIT) CRESCENDO_BUILD_DATE=$(BUILD_DATE) $(if $(APP_VERSION),MARKETING_VERSION=$(APP_VERSION))
 
 SYMROOT  := $(CURDIR)/$(BUILD_DIR)/products
 OBJROOT  := $(CURDIR)/$(BUILD_DIR)/obj
@@ -104,7 +105,7 @@ endef
         install run logs logs-sandbox logs-replay crashes \
         sysext-list sysext-dev-on sysext-dev-off entitlements verify-sign eslogger \
         clean distclean \
-        check-signing install-hooks local-sign probe-sandbox-net probe-sandbox-net-json cresc cresc-test \
+        check-signing check-pii check-docs screenshots install-hooks local-sign probe-sandbox-net probe-sandbox-net-json cresc cresc-test \
         require-macos require-xcode require-clt require-team require-sign require-safe-builddir
 
 #= ---------------------------------------------------------------------------
@@ -256,8 +257,9 @@ build-signed: require-xcode require-team #= Build signed with YOUR Team ID (TEAM
 lint: #= Run swiftlint if installed (skips with a note otherwise)
 	@if command -v swiftlint >/dev/null; then swiftlint lint --quiet; else echo "swiftlint not installed - skipping (brew install swiftlint)"; fi
 
-check: #= Signing check + whitespace check + lint + build (run before pushing)
+check: #= Signing check + personal-data check + whitespace check + lint + build (run before pushing)
 	@$(MAKE) --no-print-directory check-signing
+	@$(MAKE) --no-print-directory check-pii
 	@git diff --check
 	@$(MAKE) --no-print-directory lint
 	@$(MAKE) --no-print-directory build
@@ -273,6 +275,15 @@ test: require-xcode require-sign #= Run Xcode tests (set TEST_SCHEME=<scheme>; t
 
 local-sign: require-macos #= Ad-hoc sign the built app + extension with their entitlements (Sign to Run Locally)
 	@sh scripts/local-sign.sh "$(APP_PATH)" "$(APP_ENT)" "$(EXT_ENT)"
+
+check-pii: #= Fail if tracked files contain personal data (emails, real home folders, tokens, public IPs ...); HISTORY=1 also scans commits
+	@sh scripts/check-pii.sh $(if $(filter 1,$(HISTORY)),--history)
+
+check-docs: #= Check that links and images in README/docs resolve and report missing screenshots (STRICT=1 fails on them)
+	@sh scripts/check-docs.sh $(if $(filter 1,$(STRICT)),--strict)
+
+screenshots: require-macos #= Guided capture of the documentation screenshots into docs/screenshots (ONLY=name for one)
+	@sh scripts/capture-docs-screenshots.sh $(if $(ONLY),--only $(ONLY))
 
 check-signing: #= Fail if the Xcode project has a Team ID, certificate or profile (local ad-hoc signing only)
 	@sh scripts/check-signing.sh

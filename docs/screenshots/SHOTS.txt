@@ -1,0 +1,20 @@
+# = Shot list for the documentation screenshots. Format:  file-name (without .png) | what the window must show
+# = Capture with:  make screenshots            (all, one after the other)   or   make screenshots ONLY=files-list
+# = Use a demo setup: a scratch folder with harmless files, no personal folders open, and a macOS account whose name you are happy to show.
+hero-dark|Main window, File segment, List mode, capture running, a row selected with the inspector open (macOS Dark appearance)
+hero-light|The same view in the Light appearance
+files-list|File segment, List mode: Kind icons, PID, Process, Path with file-type icons, Inode, Date, legend bar underneath
+files-text|Text mode with a few MOD / CRE / DEL / MVT lines
+files-tree|Tree mode: folders expanded, change counts, sort popup visible
+files-graph-tree|Graph, Horizontal Tree layout with badges and a red cross on a deleted file, status line visible
+files-graph-sunburst|Graph, Sunburst layout with the centre showing the change total
+files-filter|Filter panel open with two or three rules and the template menu
+files-record|Toolbar with the Record button and the pre-roll menu open
+player|A recording open in the player window: transport bar, scrubber, list below
+console-sessions|Cresc Console, Sessions tab with write folders as rows and a finished run in the log
+console-denials|Cresc Console, Denials tab with candidates, a selected row and its detail box, the grant buttons
+console-profile|Cresc Console, Profile tab with the history and the sandbox text
+console-events|Cresc Console, Events tab with scope row and captured events
+setup-banner|The event daemon banner (install daemon, or open Full Disk Access)
+menu-bar|The menu bar item's menu (build line, Cresc Console, Open Recording)
+graph-controls|Graph toolbar with the layout, cap, user and Apple filters and the zoom buttons
