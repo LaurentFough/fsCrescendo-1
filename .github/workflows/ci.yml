@@ -1,0 +1,78 @@
+# = CI: engine tests (Linux + macOS, old and new Python), repository hygiene, and a macOS build of the lite app.
+# = Runs on pushes to master and on every pull request. No secrets, read-only token, no signing identity.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    name: cresc tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.9" }
+          - { os: ubuntu-latest, python: "3.13" }
+          - { os: macos-latest, python: "3.13" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Run the engine tests
+        working-directory: tools/cresc
+        run: python -m unittest discover -s tests -t .
+
+  hygiene:
+    name: repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Signing settings (local signing only)
+        run: sh scripts/check-signing.sh
+      - name: Personal data
+        run: sh scripts/check-pii.sh
+      - name: Shell syntax
+        run: |
+          for f in scripts/*.sh; do sh -n "$f" || exit 1; done
+          echo "all scripts parse"
+      - name: Documentation links and screenshots (warn only)
+        run: sh scripts/check-docs.sh
+
+  macos-build:
+    name: build the lite app (macOS)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the build number is the commit count
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          make doctor
+      - name: Build (unsigned, then ad-hoc signed with no entitlements)
+        run: make build-lite
+      - name: Package for download
+        run: |
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent build/lite/Crescendo.app "dist/Crescendo-lite-ci-${GITHUB_SHA::7}.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Crescendo-lite-ci
+          path: dist/*.zip
+          retention-days: 7

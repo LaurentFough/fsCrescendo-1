@@ -1,0 +1,134 @@
+# = Release: builds the lite app and its helpers on a macOS runner and publishes them as a GitHub release.
+# = Trigger: push a tag like v1.2.3 (or run the workflow by hand with an existing tag).
+# = What is published: the app (zip), the event daemon binary, the cresc engine (tar.gz), SHA256SUMS, and a build provenance attestation.
+# = Signing: ad-hoc ("Sign to Run Locally") only. There is NO Apple team id, certificate or secret anywhere in this workflow, so the
+# = artifacts are not notarized; the release notes tell users how to open them. The daemon binary is ad-hoc signed too.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and publish (for example v1.2.3)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: engine tests before release
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Check the tag name
+        run: |
+          case "$TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "bad tag: $TAG" >&2; exit 1 ;; esac
+          printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9.]+)?$' || { echo "bad tag: $TAG" >&2; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Engine tests
+        working-directory: tools/cresc
+        run: python -m unittest discover -s tests -t .
+      - name: Personal data and signing checks
+        run: |
+          sh scripts/check-signing.sh
+          sh scripts/check-pii.sh
+
+  build:
+    name: build on macOS
+    needs: tests
+    runs-on: macos-15
+    permissions:
+      contents: read
+      id-token: write      # for the provenance attestation
+      attestations: write
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+          fetch-depth: 0
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          make doctor
+      - name: Build the lite app and the event daemon
+        run: |
+          VERSION="${TAG#v}"
+          make build-lite APP_VERSION="${VERSION%%-*}"
+      - name: Package
+        run: |
+          BUILD=$(git rev-list --count HEAD)
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent build/lite/Crescendo.app "dist/Crescendo-lite-${TAG}-build${BUILD}.zip"
+          cp build/esd/crescendo-esd "dist/crescendo-esd-${TAG}-$(uname -m)"
+          tar --exclude='__pycache__' -czf "dist/cresc-engine-${TAG}.tar.gz" -C tools cresc
+          (cd dist && shasum -a 256 * > SHA256SUMS)
+          cat dist/SHA256SUMS
+      - name: Provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+          path: dist
+      - name: Release notes
+        run: |
+          cat > notes.md <<'NOTES'
+          ## Install
+          1. Download `Crescendo-lite-*.zip`, unzip it and move **Crescendo.app** to /Applications.
+          2. The app is signed ad-hoc ("Sign to Run Locally") and is **not notarized**, so macOS blocks the first launch.
+             Right-click the app > **Open** > **Open**, or run: `xattr -dr com.apple.quarantine /Applications/Crescendo.app`
+          3. Open the app. For live file events it offers to install the **event daemon** (one administrator password) and then asks
+             you to give that daemon **Full Disk Access** (System Settings > Privacy & Security). No SIP changes are needed.
+          4. Select the **File** segment and press **Start**.
+
+          Needs macOS 13 or later and Python 3 (Command Line Tools or Homebrew) for the bundled engine.
+          Full guide: `docs/user-guide.md` in the source tree.
+
+          ## Verify the download
+          ```
+          shasum -a 256 -c SHA256SUMS
+          gh attestation verify Crescendo-lite-*.zip --repo ${{ github.repository }}
+          ```
+
+          ## Files
+          - `Crescendo-lite-*.zip`: the app (event daemon installer and cresc engine are bundled inside)
+          - `crescendo-esd-*`: the event daemon binary alone (advanced; the app installs its own copy)
+          - `cresc-engine-*.tar.gz`: the cresc engine / command-line tool (`python3 -m cresc`)
+          - `SHA256SUMS`
+          NOTES
+      - name: Create or update the release
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file notes.md --verify-tag
+          fi
