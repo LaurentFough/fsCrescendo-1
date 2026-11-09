@@ -1,124 +1,103 @@
 ![Cover](assets/cover.png)
 
-# Table of Contents
+# Crescendo (fsCrescendo fork)
 
-1. [Getting Started](#Getting-Started)
-2. [Requirements](#requirements)
-3. [Components](#Components)
-4. [Testing and Development](#testing-and-development)
-5. [Signing](#signing)
-6. [Building](#building)
-7. [Issues/Bugs/Features](#Issues/Bugs/Features)
-8. [Troubleshooting](#Troubleshooting)
-9. [TODO](#todo)
+**See what programs do to your files, in real time, on a normal Mac, then confine them.**
+A local inspector for file activity (created, deleted, modified, renamed, attribute changes, with the process responsible) and a
+workbench for `sandbox-exec` profiles: run a suspicious program in a sandbox, see what it was denied, allow only what it needs, restart.
 
----
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/hero-dark.png">
+  <img alt="File activity in the main window" src="docs/screenshots/hero-light.png">
+</picture>
 
-![Crescendo Demo](assets/demo.png)
+- **No Apple entitlement and no SIP changes.** Events come from Apple's own `eslogger` tool through a small helper daemon you
+  install once with an administrator password. (The original Endpoint Security app needs an Apple-approved entitlement or a VM with SIP off.)
+- **Everything stays on your Mac.** No network access, no telemetry. See [Privacy and permissions](#privacy-and-permissions).
+- Fork of [SuprHackerSteve/Crescendo](https://github.com/SuprHackerSteve/Crescendo) (MIT). The original system-extension code is kept
+  in the repository but is not part of the "lite" build described here.
 
----
+## What you can do
 
-## Getting Started
+| I want to... | Use | Guide |
+|---|---|---|
+| watch file changes live, with the responsible process | main window, **File** segment | [User guide: Files view](docs/user-guide.md#the-files-view) |
+| narrow it down (by path, process, user, kind) and hide noisy folders | **Filter** panel, Delete key, right-click | [Filter and hide](docs/user-guide.md#filter-hide-and-the-row-menu) |
+| see the activity as a tree or a picture | **Tree** and **Graph** (horizontal tree or sunburst) | [Tree and Graph](docs/user-guide.md#tree-and-graph) |
+| save an episode and replay it later, or send it to someone | **Record** (with pre-roll), **Open Recording...** | [Recordings](docs/user-guide.md#recordings-and-the-player) |
+| run an unknown program in a sandbox and loosen it step by step | **Cresc Console**: Sessions, Denials, Profile | [Cresc Console](docs/user-guide.md#the-cresc-console) |
+| hand over proof of what a run did | **Export evidence...** (zip with hashes) | [Evidence bundles](docs/user-guide.md#evidence-bundles) |
+| script all of it | `python3 -m cresc ...` | [Command line](docs/user-guide.md#command-line) |
 
-Apple has introduced some new security mechanisms that we need to enable to get Crescendo running.
-
-1. Ensure that you have moved the app to your /Applications director or the system extension will fail to load.
-2. For the first run you will be prompted to approve the system extension, after clicking the "Start" button.
-
-   _NOTE: I have noticed that there is an issue where System Preferences won't show an allow button. I assume this is some internal issue Apple needs to workout. Clicking back to System Preferences and navigating forward again seems to fix the issue._
-
-   ![Sysext](assets/sysext.png)
-   ![Allow](assets/allow.png)
-
-3. You will need to enable Full Disk Access for the system extension.
-
-   ![FullDisk](assets/fulldisk.png)
-
----
+Every feature with its location, requirements and verification status: [docs/features.md](docs/features.md).
 
 ## Requirements
 
-Crescendo is only compatible with >=10.15.X and at least Xcode 10.
+- macOS 13 (Ventura) or later, Apple silicon or Intel.
+- Python 3 for the bundled engine (the Command Line Tools provide `/usr/bin/python3`; Homebrew works too). The engine uses only the standard library.
+- An administrator password once (to install the event daemon) and Full Disk Access for that daemon.
+- To build from source: Xcode 15 or later (`make doctor` checks).
 
----
+## Install
 
-## Components
+**From a release** (recommended): download `Crescendo-lite-*.zip` from the [Releases](../../releases) page, unzip, move **Crescendo.app** to
+`/Applications`. The app is signed ad-hoc and **not notarized**, so macOS blocks the first launch: right-click the app, **Open**, **Open**
+(or `xattr -dr com.apple.quarantine /Applications/Crescendo.app`). Check the download with `shasum -a 256 -c SHA256SUMS`.
 
-This project consists of three main components:
+**From source:**
 
-1. A system extension (CrescendoExtension)
-2. A Framework wrapper around the Endpoint Security Framework (Crescendo)
-3. An app for viewing events in a nice little user interface (CrescendoApp)
-
----
-
-## Testing and Development
-
-It is _highly_ recommended to test this code in a virtual machine with SIP disabled, since this project requires the endpoint-security entitlement, TCC, and proper signing when SIP is enabled.
-
-1. Boot into Recovery mode on macOS
-2. Disable SIP and AMFI
-
-```
-csrutil disable
-nvram boot-args="amfi_get_out_of_my_way=0x1"
+```bash
+git clone <URL from the green Code button above> fsCrescendo && cd fsCrescendo
+make doctor          # what is installed / missing
+make build-lite      # builds build/lite/Crescendo.app (ad-hoc signed, no entitlements)
+open build/lite/Crescendo.app
 ```
 
-3. Reboot
-4. Enable developer mode so our extensions will reload everytime we call `OSSystemExtensionManager.shared.submitRequest`
+## First run (4 steps)
 
+1. Open the app. Click the **File** segment, then **Start**.
+2. A banner says the **event daemon** is missing: click **Install daemon...** and enter your administrator password.
+3. A second banner asks for **Full Disk Access**: click **Open Full Disk Access...**, drag the highlighted
+   `com.loff.crescendo.esd` file into the list (or use the **+** button) and switch it on.
+4. Come back to the app and press **Start** again. Rows appear as soon as anything on the Mac changes a file.
+
+If something does not work, see [docs/troubleshooting.md](docs/troubleshooting.md).
+
+## The cresc engine and the command line
+
+The app is a front end for `cresc`, a standard-library Python tool that also works on its own, for example to replay a recording or
+watch events in a terminal:
+
+```bash
+python3 -m cresc watch --files --cleanup prune < capture.jsonl     # file changes from eslogger output
+python3 -m cresc recording info  ~/Library/Application\ Support/Crescendo/Recordings/Files*.crescrec
+python3 -m cresc loop demo --target ./the-binary --write-dir ~/.local/state/crescendo/sandbox -- --its-flags
 ```
-systemextensionsctl developer on
-```
 
----
+Reference: [tools/cresc/README.md](tools/cresc/README.md) (commands) and [tools/cresc/PROTOCOL.md](tools/cresc/PROTOCOL.md) (the JSON-lines interface the app uses).
 
-## Signing
+## Privacy and permissions
 
-If you wish to sign your own application, it is highly recommend to read Apple's documentation on [System Extension](https://developer.apple.com/documentation/systemextensions) requirements and [Notorization](https://developer.apple.com/documentation/xcode/notarizing_macos_software_before_distribution).
+- The event daemon runs as root, but only starts `/usr/bin/eslogger` when the app asks, serves **only your user** over a `0600` socket,
+  and stops it when you disconnect. Details and uninstall steps: [SECURITY.md](SECURITY.md).
+- Recordings and evidence bundles contain file paths and process names. Your home folder path is replaced by `~` when you export evidence
+  (unless you turn that off); other personal data is not removed, so look before you share.
+- Nothing is sent anywhere. The app and engine open no network connections.
 
-**Signing and entitlement is a non-trivial exercise.**
+## Status and limits
 
----
+- The **lite build** shows live data in the **File** segment (and in the Cresc Console). The other segments of the main window
+  (All Events, Process, Network, Unsigned, Exclude Apple) belong to the original Endpoint Security app and stay empty in the lite build.
+- Events are notifications: you can watch, but not block file operations (blocking needs the Apple-approved Endpoint Security entitlement).
+- Feature-by-feature verification status (verified on a Mac / implemented, awaiting a first test): [docs/features.md](docs/features.md).
 
-## Building
+## Documentation
 
-I have included my .xproj file in this release to get folks started. In the future I will likely move to using the new xcconfig file as this seems much more sane of an approach instead of commiting xproj files. If you wish to simply build the example cli application you can do so with Xcode.
+[docs/README.md](docs/README.md) lists everything: [User guide](docs/user-guide.md), [Features](docs/features.md),
+[Troubleshooting](docs/troubleshooting.md), [Development](docs/development.md), [Event daemon](docs/event-daemon.md),
+[Recording format](docs/recording-format.md), [Sandbox semantics](docs/sandbox-semantics.md).
 
-In order to build this application and run it on a production macOS system, you will need the endpoint-security entitlement and a developer certificate from Apple.
+## Credits and licence
 
-The Crescendo framework can easily be bundled with any Swift application. I may move to CocoaPods in the future, but I am unfamiliar with them right now.
-
----
-
-## Issues/Bugs/Features
-
-Please feel free to raise an issue if you wish to see a feature added or encounter an issue. If you wish to contribute a pull request, please just ensure you run swiftlint over your code before contributing.
-
-I will cut releases for the compiled + signed app and include them in the Releases tab as needed.
-
----
-
-## Troubleshooting
-
-- If you are running on a production Mac, you should _NOT_ disable SIP or AMFI. Those instructions are for developers wishing to make code changes.
-
-- Did you enable the system extension by clicking the "Allow" button in `System Preferences -> Security & Privacy`? If not, you will not see any events.
-
-- Did you enable full disk access in `System Preferences -> Security & Privacy -> Privacy Tab`? If not, you will not see any events.
-
-* If you encounter any issues, open Console.app and search for `crescendo` or `<your_bundle_id>`/`com.suprhackersteve` as a filter, that should assist you in troubleshooting any potential issues. It is also a good idea to check in CrashReporter and see if the extension has crashed or exited with `fatalError`.
-
-* If you wish to forcefully unload the system extension, there is a menu item named "Unload System Extension" that will unload it. This action may lead to odd side effects, only do it if you know what you are doing.
-
-* If you have added a process to the blacklist and it is still allowed to execute, remember to check the _real full path_. Simply using /Applications/Foo.app, will not be enough to prevent the execution. Also, many macOS applications are launched via xpcproxy.
-
----
-
-## TODO
-
-1. Unit tests (need to figure out a reasonable way of running them)
-2. Network events (tracking in [this issue](https://github.com/SuprHackerSteve/Crescendo/issues/1))
-3. Better filtering and searching support for event data
-4. Choose a packaging system for framework (Cocoapods, Swift Package Manager, etc)
-5. Try to distribute system extension by itself using the new redistributable entitlement?
+MIT licence ([LICENSE](LICENSE)). Original Crescendo by Stephen Davis (FireEye, Inc.). This fork adds the lite build, the event daemon,
+the `cresc` engine, the Cresc Console and the Files view.

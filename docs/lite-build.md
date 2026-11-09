@@ -23,6 +23,9 @@ keywords:
 
 # Crescendo lite build
 
+> **Technical notes, written feature by feature while the lite build was developed.** For using the app read the
+> [user guide](user-guide.md); for what works see [features.md](features.md).
+
 ## Why
 The stock app embeds a system extension that holds `com.apple.developer.endpoint-security.client`. Apple must approve
 that entitlement; an ad-hoc signed app carrying it is killed by AMFI at launch unless SIP/AMFI are relaxed.
