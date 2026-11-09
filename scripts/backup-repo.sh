@@ -1,5 +1,5 @@
 #!/bin/sh
-#= backup-repo.sh  version 1.0.0 (2026-11-09)
+#= backup-repo.sh  version 1.0.1 (2026-11-09)
 #= Makes a complete, verified, LOCAL backup of this repository before its history is replaced:
 #=   <dest>/fsCrescendo-backup-<date>/all.bundle   every branch and tag in one file (git bundle), verified
 #=   <dest>/fsCrescendo-backup-<date>/mirror.git   a bare mirror clone (browse with git --git-dir)
@@ -10,12 +10,16 @@
 #= Exit  : 0 ok | 1 verification failed | 2 not a git checkout
 set -eu
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 log() { printf '%s backup[%s] %s\n' "$(date '+%H:%M:%S')" "$VERSION" "$1"; }
 die() { printf 'ERROR: %s\n' "$1" >&2; exit "${2:-1}"; }
 
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git checkout" 2
 ROOT=$(git rev-parse --show-toplevel)
+#= a shallow clone has no complete history: its bundle cannot be restored, so refuse instead of making a useless backup
+if [ "$(git -C "$ROOT" rev-parse --is-shallow-repository 2>/dev/null)" = true ]; then
+  die "this is a SHALLOW clone (incomplete history). Run:  git fetch --unshallow   and try again" 1
+fi
 DEST_BASE=${1:-"$HOME/Backups"}
 STAMP=$(date +%Y%m%d-%H%M%S)
 DEST="$DEST_BASE/fsCrescendo-backup-$STAMP"
