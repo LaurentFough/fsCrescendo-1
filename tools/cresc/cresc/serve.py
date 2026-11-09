@@ -752,7 +752,7 @@ class Server:
             raise ApiError("session_error", str(exc))
         with self._lock:
             self.players[pid] = player
-        player.start()
+        threading.Timer(0.1, player.start).start()          #= the response (with play_id) must reach the client before the first records
         return {"play_id": pid, "duration_s": round(player.duration, 6), "records": len(player.records)}
 
     def m_recording_control(self, p: Dict) -> Dict:

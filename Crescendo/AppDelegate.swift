@@ -30,6 +30,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         console?.showEventsTab()
     }
 
+    //= recordings (.crescrec) open as documents in a player window
+    @objc func openRecording(_: Any?) {
+        NSDocumentController.shared.openDocument(nil)
+    }
+
+    //= this is not an app that starts with an untitled document
+    func applicationShouldOpenUntitledFile(_: NSApplication) -> Bool { false }
+
     @objc func showWindow(_: Any?) {
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -39,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem(title: "Show App Window", action: #selector(showWindow), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Cresc Console...", action: #selector(showConsole), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Open Recording...", action: #selector(openRecording), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem(title: "Run in Background", action: #selector(hideDockIcon), keyEquivalent: ""))
@@ -54,6 +63,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         buildMenuBarMenu()
+        //= File > Open Recording... (Command-O), added at run time to the storyboard's File menu
+        if let fileMenu = NSApp.mainMenu?.items.first(where: { $0.title == "File" })?.submenu {
+            let item = NSMenuItem(title: "Open Recording...", action: #selector(openRecording(_:)), keyEquivalent: "o")
+            item.target = self
+            fileMenu.insertItem(item, at: 0)
+        }
 
         if let button = menuIcon.button {
             button.image = NSImage(named: NSImage.Name("menuicon"))

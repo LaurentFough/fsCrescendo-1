@@ -110,3 +110,13 @@ Select the **File** segment: a programmatic Files view replaces the event table 
 - **Delete** hides every change under the folder of the selected rows (a folder row hides itself); **Command-Delete** brings back the folder
   hidden last; the panel lists the hidden folders with *Restore All*.
 - **Right-click** a row: Reveal in Finder, Copy Path, Show Only / Hide this process, Show Only / Hide this folder (these add filter rules or hidden folders).
+
+## Recording and replay in the app (P5, app side)
+- **Record** (Files view toolbar, enabled while capturing): saves the activity from now on, optionally with a **pre-roll** (the last
+  1 / 5 / 15 / 60 minutes already captured) to `~/Library/Application Support/Crescendo/Recordings/Files <date>.crescrec`. **Stop Recording**
+  (or ending the capture) finishes the file and opens it in a player window.
+- **Open Recording...** (File menu, Command-O; also in the menu bar item; double-clicking a `.crescrec` in the Finder) opens a recording
+  as a read-only document. **Save As...** copies the file. The window header says what the recording is and whether its hash is intact.
+- **Player window**: the same list / text / inspector / filter / hidden-folder UI as live capture, plus Play / Pause, Restart, speed
+  (0.5x to 500x; quiet gaps over 2 s are shortened), a time scrubber (releasing it rebuilds the list up to that moment) and "Follow newest".
+- Format and command line: `docs/recording-format.md`, `python3 -m cresc recording info|verify|export|play`.

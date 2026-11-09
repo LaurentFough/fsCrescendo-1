@@ -148,6 +148,10 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
 - P4 written (untested until built): `FileFilter.swift` (rules, All/Any, templates in preferences), Filter checkbox + panel in the Files
   view, Delete / Command-Delete hide and restore folders, right-click row menu.
 
+- P5 app side written (untested until built): Record button with pre-roll, `RecordingDocument` / `PlayerViewController` (document type
+  `com.loff.crescendo.recording`, Open Recording...), replay mode of the Files view. Server fix: `recording.play` answers before records flow.
+  Still open: run-session recordings from the console, Export from the player window.
+
 ## 8. Full build and VM idea (see also docs/future-feature-adds.md)
 - A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no
   SIP-on workaround. For observation it adds little over `eslogger`; it adds real-time blocking (AUTH events), which the sandbox

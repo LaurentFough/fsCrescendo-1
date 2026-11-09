@@ -1,7 +1,7 @@
 import Cocoa
 import UniformTypeIdentifiers
 
-//= FilesViewController.swift  version 0.3.0 (2026-11-09)
+//= FilesViewController.swift  version 0.4.0 (2026-11-09)
 //= File activity in the style of a file-system monitor, shown inside the main window when the "File" segment is selected.
 //= Source: the cresc engine (`watch.start` with view "files"), fed by the event daemon (eslogger). Rows are
 //= cresc.filechange/1: created, deleted, modified, attributes, moved from / moved to, meta.
@@ -115,6 +115,23 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     var onNeedSetup: (() -> Void)?
 
     private let engine = EngineClient.shared
+    //= replay mode: the rows come from a recording (PlayerViewController), not from a live watch
+    private let isReplay: Bool
+    private var recordingId: String?
+    private let recordButton = NSButton(title: "Record", target: nil, action: nil)
+    private let prerollPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private static let prerollChoices: [(title: String, seconds: Double)] = [
+        ("No pre-roll", 0), ("Include last 1 min", 60), ("Include last 5 min", 300),
+        ("Include last 15 min", 900), ("Include last hour", 3600),
+    ]
+
+    init(replay: Bool = false) {
+        isReplay = replay
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder _: NSCoder) { fatalError("not used") }
+
     private static let daemonSocket = "/var/run/com.loff.crescendo.esd.sock"
     private static let maxRows = 20000
 
@@ -211,6 +228,15 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         inspectorButton.target = self
         inspectorButton.action = #selector(toggleInspector)
         inspectorButton.toolTip = "Show or hide the details of the selected change"
+        recordButton.target = self
+        recordButton.action = #selector(recordClicked)
+        recordButton.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: "Record")
+        recordButton.imagePosition = .imageLeading
+        recordButton.contentTintColor = .systemRed
+        recordButton.isEnabled = false
+        recordButton.toolTip = "Save the activity from now on (and optionally the last minutes before) as a recording you can replay later. Start capturing first."
+        prerollPopup.addItems(withTitles: FilesViewController.prerollChoices.map { $0.title })
+        prerollPopup.toolTip = "Pre-roll: also save the newest rows that were captured before you pressed Record"
         filterButton.target = self
         filterButton.action = #selector(toggleFilter)
         filterButton.toolTip = "Show the filter rules: match by path, process, category, pid, owner and more"
@@ -222,7 +248,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         statusLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         statusLabel.setContentCompressionResistancePriority(NSLayoutConstraint.Priority(1), for: .horizontal)
         //= the status text changes width on every refresh, so it goes LAST: nothing to its left can move under the pointer
-        let bar = NSStackView(views: [modeControl, cleanupPopup, pauseButton, filterButton, inspectorButton, statusLabel])
+        let bar = NSStackView(views: [modeControl, cleanupPopup, pauseButton, recordButton, prerollPopup, filterButton, inspectorButton, statusLabel])
         bar.orientation = .horizontal
 
         //= list
@@ -307,6 +333,10 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         }
         split.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .vertical)
         showInspectorText(nil)
+        if isReplay {
+            for hidden in [cleanupPopup, pauseButton, recordButton, prerollPopup] as [NSView] { hidden.isHidden = true }
+            setStatus("replay")
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.split.setPosition(max(300, self.split.bounds.width - 320), ofDividerAt: 0)
@@ -410,6 +440,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     private func setCapturing(_ on: Bool) {
         capturing = on
         pauseButton.title = on ? "Pause" : "Resume"
+        recordButton.isEnabled = on || recordingId != nil
         onCapturingChanged?(on)
     }
 
@@ -425,6 +456,67 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     @objc private func setupClicked() { onNeedSetup?() }
+
+    //= ---- recording (live) ----------------------------------------------------------------------------------
+    @objc private func recordClicked() {
+        if recordingId != nil { stopRecording() } else { startRecording() }
+    }
+
+    private static func newRecordingPath() -> String {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory() + "/Library/Application Support")
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH.mm.ss"
+        return base.appendingPathComponent("Crescendo/Recordings/Files \(formatter.string(from: Date())).crescrec").path
+    }
+
+    private func startRecording() {
+        guard let id = watchId, capturing else {
+            setStatus("start capturing first, then Record")
+            return
+        }
+        let seconds = FilesViewController.prerollChoices[max(0, prerollPopup.indexOfSelectedItem)].seconds
+        let params: [String: Any] = ["watch_id": id, "path": FilesViewController.newRecordingPath(), "pre_roll": seconds]
+        engine.call("recording.start", params) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case let .success(info):
+                self.recordingId = info["recording_id"] as? String
+                self.recordButton.title = "Stop Recording"
+                self.prerollPopup.isEnabled = false
+                self.setStatus("recording (\(info["pre_roll_rows"] as? Int ?? 0) pre-roll rows)")
+            case let .failure(err):
+                self.setStatus("cannot record: \(err.message)")
+            }
+        }
+    }
+
+    private func stopRecording() {
+        guard let id = recordingId else { return }
+        engine.call("recording.stop", ["recording_id": id]) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case let .success(info): self.finishRecording(info["path"] as? String)
+            case let .failure(err):
+                self.recordingId = nil
+                self.recordButton.title = "Record"
+                self.setStatus("cannot stop the recording: \(err.message)")
+            }
+        }
+    }
+
+    //= the recording is saved: reset the controls and open it in a player window
+    private func finishRecording(_ path: String?) {
+        recordingId = nil
+        recordButton.title = "Record"
+        recordButton.isEnabled = capturing
+        prerollPopup.isEnabled = true
+        guard let path = path else { return }
+        setStatus("saved \((path as NSString).lastPathComponent)")
+        NSDocumentController.shared.openDocument(withContentsOf: URL(fileURLWithPath: path), display: true) { _, _, error in
+            if let error = error { NSLog("cannot open the recording: %@", error.localizedDescription) }
+        }
+    }
 
     private func showBanner(_ text: String) {
         bannerLabel.stringValue = text
@@ -449,6 +541,8 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
             if restartAfterStop { restartAfterStop = false; startCapture() }
         case "watch.error":
             if data["watch_id"] as? String == watchId { setStatus("error: \(data["message"] ?? "")") }
+        case "recording.finished":
+            if data["recording_id"] as? String == recordingId { finishRecording(data["path"] as? String) }
         default:
             break
         }
@@ -459,7 +553,8 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         nextRowId += 1
         row.id = nextRowId
         rows.append(row)
-        if rows.count > FilesViewController.maxRows { rows.removeFirst(rows.count - FilesViewController.maxRows); rebuildVisible() }
+        let cap = isReplay ? 200_000 : FilesViewController.maxRows
+        if rows.count > cap { rows.removeFirst(rows.count - cap); rebuildVisible() }
         else if matches(row) { visible.append(row) }
         scheduleReload()
     }
@@ -491,12 +586,23 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
             rebuildText(scrollToEnd: follow)
         }
         if capturing { setStatus("capturing - \(visible.count) of \(rows.count) rows") }
+        else if isReplay { setStatus("replay - \(visible.count) of \(rows.count) rows") }
     }
 
     //= ---- filtering and actions of the window's toolbar -----------------------------------------------------
     func setSearch(_ text: String) {
         search = text.lowercased()
         rebuildVisible()
+        reloadViews(scrollToEnd: false)
+    }
+
+    //= replay: a row from the player; reset empties the list before a seek rebuilds it
+    func ingest(_ change: [String: Any]) { append(FileRow(change)) }
+
+    func resetRows() {
+        rows.removeAll()
+        visible.removeAll()
+        showInspectorText(nil)
         reloadViews(scrollToEnd: false)
     }
 
