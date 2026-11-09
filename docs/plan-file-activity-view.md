@@ -152,6 +152,9 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
   `com.loff.crescendo.recording`, Open Recording...), replay mode of the Files view. Server fix: `recording.play` answers before records flow.
   Still open: run-session recordings from the console, Export from the player window.
 
+- P6 written (untested until built): `FilesTree.swift` (PathNode/PathTree, outline with rolled-up counts, sort modes, Expand/Collapse All, inspector
+  summary, Delete hides) and a Tree segment in the Files view and the player window. Next: P7 graph visualisation (native drawing).
+
 ## 8. Full build and VM idea (see also docs/future-feature-adds.md)
 - A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no
   SIP-on workaround. For observation it adds little over `eslogger`; it adds real-time blocking (AUTH events), which the sandbox

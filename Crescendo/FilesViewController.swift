@@ -1,7 +1,7 @@
 import Cocoa
 import UniformTypeIdentifiers
 
-//= FilesViewController.swift  version 0.4.0 (2026-11-09)
+//= FilesViewController.swift  version 0.5.0 (2026-11-09)
 //= File activity in the style of a file-system monitor, shown inside the main window when the "File" segment is selected.
 //= Source: the cresc engine (`watch.start` with view "files"), fed by the event daemon (eslogger). Rows are
 //= cresc.filechange/1: created, deleted, modified, attributes, moved from / moved to, meta.
@@ -155,7 +155,9 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     private let bannerLabel = NSTextField(wrappingLabelWithString: "")
     private let bannerButton = NSButton(title: "Open setup", target: nil, action: nil)
     private let bannerBox = NSStackView()
-    private let modeControl = NSSegmentedControl(labels: ["List", "Text"], trackingMode: .selectOne, target: nil, action: nil)
+    private let modeControl = NSSegmentedControl(labels: ["List", "Text", "Tree"], trackingMode: .selectOne, target: nil, action: nil)
+    private let treeView = FilesTreeView()
+    private var treeActive: Bool { modeControl.selectedSegment == 2 }
     private let cleanupPopup = NSPopUpButton(frame: .zero, pullsDown: false)
     private let pauseButton = NSButton(title: "Pause", target: nil, action: nil)
     private let inspectorButton = NSButton(checkboxWithTitle: "Inspector", target: nil, action: nil)
@@ -215,7 +217,8 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         modeControl.selectedSegment = 0
         modeControl.target = self
         modeControl.action = #selector(modeChanged)
-        modeControl.toolTip = "List: one row per change. Text: the same rows as plain text you can select and copy."
+        modeControl.toolTip = "List: one row per change. Text: the same rows as plain text you can select and copy. "
+            + "Tree: the changed paths as folders with change counts."
         cleanupPopup.addItems(withTitles: ["No Cleanup", "Coalesce Repeats", "Prune Redundant Events"])
         cleanupPopup.target = self
         cleanupPopup.action = #selector(cleanupChanged)
@@ -297,6 +300,21 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
                 scroll.topAnchor.constraint(equalTo: left.topAnchor), scroll.bottomAnchor.constraint(equalTo: left.bottomAnchor),
             ])
         }
+
+        //= tree
+        let treeHost = treeView.view
+        treeHost.translatesAutoresizingMaskIntoConstraints = false
+        treeHost.isHidden = true
+        left.addSubview(treeHost)
+        NSLayoutConstraint.activate([
+            treeHost.leadingAnchor.constraint(equalTo: left.leadingAnchor), treeHost.trailingAnchor.constraint(equalTo: left.trailingAnchor),
+            treeHost.topAnchor.constraint(equalTo: left.topAnchor), treeHost.bottomAnchor.constraint(equalTo: left.bottomAnchor),
+        ])
+        treeView.iconFor = { [weak self] node in self?.treeIcon(node) ?? NSImage() }
+        treeView.onSelect = { [weak self] node in self?.treeSelected(node) }
+        treeView.onHideFolder = { [weak self] dir in self?.hideFolder(dir) }
+        treeView.onOnlyFolder = { [weak self] dir in self?.showOnlyFolder(dir) }
+        treeView.onRestoreHidden = { [weak self] in self?.restoreHidden(all: false) }
 
         //= inspector
         inspectorView.isEditable = false
@@ -555,7 +573,10 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         rows.append(row)
         let cap = isReplay ? 200_000 : FilesViewController.maxRows
         if rows.count > cap { rows.removeFirst(rows.count - cap); rebuildVisible() }
-        else if matches(row) { visible.append(row) }
+        else if matches(row) {
+            visible.append(row)
+            if treeActive { treeView.tree.add(row) }
+        }
         scheduleReload()
     }
 
@@ -572,7 +593,9 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
 
     private func reloadViews(scrollToEnd: Bool) {
         let follow = scrollToEnd && autoscroll()
-        if textScroll.isHidden {
+        if treeActive {
+            treeView.reload()
+        } else if textScroll.isHidden {
             //= reloadData() drops the selection; remember the selected rows by id and select them again
             let selectedIds = Set(table.selectedRowIndexes.compactMap { $0 < visible.count ? visible[$0].id : nil })
             table.reloadData()
@@ -602,6 +625,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     func resetRows() {
         rows.removeAll()
         visible.removeAll()
+        treeView.tree.reset()
         showInspectorText(nil)
         reloadViews(scrollToEnd: false)
     }
@@ -609,6 +633,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     func clear() {
         rows.removeAll()
         visible.removeAll()
+        treeView.tree.reset()
         showInspectorText(nil)
         reloadViews(scrollToEnd: false)
         setStatus(capturing ? "capturing" : "stopped")
@@ -764,13 +789,41 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
         hideFolder(folder(of: row))
     }
 
-    private func rebuildVisible() { visible = rows.filter { matches($0) } }
+    private func rebuildVisible() {
+        visible = rows.filter { matches($0) }
+        if treeActive { treeView.tree.rebuild(visible) }
+    }
 
     @objc private func modeChanged() {
-        let showText = modeControl.selectedSegment == 1
-        listScroll.isHidden = showText
-        textScroll.isHidden = !showText
+        let mode = modeControl.selectedSegment
+        listScroll.isHidden = mode != 0
+        textScroll.isHidden = mode != 1
+        treeView.view.isHidden = mode != 2
+        if mode == 2 { treeView.tree.rebuild(visible) } //= the tree is only maintained while it is shown
         reloadViews(scrollToEnd: false)
+    }
+
+    //= ---- tree ----------------------------------------------------------------------------------------------
+    private func treeIcon(_ node: PathNode) -> NSImage {
+        if node.lastCategory == "deleted", node.children.isEmpty { return symbol("xmark.circle.fill", .systemRed, "Deleted") }
+        if node.isDirectory || !node.children.isEmpty {
+            if let hit = FilesViewController.iconCache["folder16"] { return hit }
+            let icon = (NSWorkspace.shared.icon(for: .folder).copy() as? NSImage) ?? NSWorkspace.shared.icon(for: .folder)
+            icon.size = NSSize(width: 16, height: 16)
+            FilesViewController.iconCache["folder16"] = icon
+            return icon
+        }
+        return fileIcon(node.lastRow ?? FileRow(["path": node.path, "category": "modified"]))
+    }
+
+    private func treeSelected(_ node: PathNode?) {
+        guard let node = node else { showInspectorText(nil); return }
+        showInspectorText(node.lastRow, summary: node)
+    }
+
+    private func showOnlyFolder(_ dir: String) {
+        filterPanel.addRule(FilterRule(field: .path, op: .beginsWith, value: dir + "/"))
+        showFilterPanel()
     }
 
     @objc private func toggleInspector() {
@@ -804,7 +857,7 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
     }
 
     //= ---- inspector -----------------------------------------------------------------------------------------
-    private func showInspectorText(_ row: FileRow?) {
+    private func showInspectorText(_ row: FileRow?, summary: PathNode? = nil) {
         let bold = NSFont.boldSystemFont(ofSize: 12), normal = NSFont.systemFont(ofSize: 12)
         let out = NSMutableAttributedString()
         func heading(_ text: String) {
@@ -815,8 +868,24 @@ final class FilesViewController: NSViewController, NSTableViewDataSource, NSTabl
             out.append(NSAttributedString(string: key + ": ", attributes: [.font: bold, .foregroundColor: NSColor.secondaryLabelColor]))
             out.append(NSAttributedString(string: value + "\n", attributes: [.font: normal]))
         }
+        if let node = summary {
+            heading("Activity Under This Path")
+            line("Path", node.path)
+            line("Changes", String(node.total))
+            for (category, label) in [("created", "Created"), ("deleted", "Deleted"), ("modified", "Content modified"),
+                                      ("attributes", "Attributes modified"), ("moved_from", "Moved from"), ("moved_to", "Moved to")] {
+                if let n = node.counts[category] { line(label, String(n)) }
+            }
+            line("First change", FileFormat.time(node.firstTs, withDate: true))
+            line("Last change", FileFormat.time(node.lastTs, withDate: true))
+            let busiest = node.processes.sorted { $0.value > $1.value }.prefix(6).map { "\($0.key) (\($0.value))" }
+            line("Busiest processes", busiest.joined(separator: ", "))
+            if row != nil { heading("Latest Change of This Exact Path") }
+        }
         guard let r = row else {
-            out.append(NSAttributedString(string: "Select a change to see its details.", attributes: [.font: normal, .foregroundColor: NSColor.secondaryLabelColor]))
+            if summary == nil {
+                out.append(NSAttributedString(string: "Select a change to see its details.", attributes: [.font: normal, .foregroundColor: NSColor.secondaryLabelColor]))
+            }
             inspectorView.textStorage?.setAttributedString(out)
             return
         }

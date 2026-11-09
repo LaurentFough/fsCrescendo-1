@@ -120,3 +120,15 @@ Select the **File** segment: a programmatic Files view replaces the event table 
 - **Player window**: the same list / text / inspector / filter / hidden-folder UI as live capture, plus Play / Pause, Restart, speed
   (0.5x to 500x; quiet gaps over 2 s are shortened), a time scrubber (releasing it rebuilds the list up to that moment) and "Follow newest".
 - Format and command line: `docs/recording-format.md`, `python3 -m cresc recording info|verify|export|play`.
+
+## Tree view (P6)
+The **Tree** segment (next to List and Text) shows the changed paths as a folder hierarchy. It uses the same filtered rows as the list, so the
+filter panel and hidden folders apply to it too, and it works the same in the player window.
+- **Columns**: Path (Finder icon, red cross when the last change deleted it), Changes (everything at or below the path), Created, Deleted,
+  Modified, Attr., Moved, Last Change. Counts roll up through the folders, so busy places stand out.
+- **Toolbar**: Expand All, Collapse All, and the order inside folders: by name, most recent first, or most active first. The first two levels
+  open by themselves.
+- **Selecting** a path fills the inspector with an *activity summary* (counts per kind, first and last change, busiest processes) and, if the
+  path itself changed, the details of its latest change.
+- **Delete** hides the selected folder, **Command-Delete** brings the last hidden folder back; the right-click menu offers Reveal in Finder,
+  Copy Path, Show Only This Folder and Hide This Folder.

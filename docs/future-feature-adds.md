@@ -23,7 +23,7 @@ keywords:
 
 ## Ideas worth borrowing from FSMonitor (none started)
 - [ ] **Pruning mode**: hide create-then-delete noise (and repeated modifies of one file).
-- [ ] **Tree view** of changed paths with event counts.
+- [x] **Tree view** of changed paths with event counts (P6).
 - [ ] **Hide a directory with one key** (Delete hides the subtree, Cmd-Delete reveals it).
 - [ ] **Save and reopen recordings as documents.**
 - [ ] **Record session info** (host, time, macOS version) in exports.
@@ -53,7 +53,7 @@ or plain text, command-line tool for automation, graph visualisation of file act
 - [ ] "Today, 22:38" style date column option (ours shows local time with milliseconds).
 - [ ] Row tinting for moved and deleted rows; selection of both halves of a rename.
 - [ ] Drag a path from a row into a filter field or another app.
-- [ ] Tree and graph views (P6, P7).
+- [x] Tree view with counts (P6). [ ] Graph view (P7): node-link drawing of the same tree, badges with event counts, red cross for deleted.
 
 ## Standardise on a file icon set (owner request 2026-11-09)
 Today the Path column and inspector use the Finder icons that macOS supplies for each file type (`NSWorkspace`), and SF Symbols for
