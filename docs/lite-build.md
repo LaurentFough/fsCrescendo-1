@@ -90,3 +90,13 @@ run), `profile/` (the exact sandbox profile used, grants and history, the diff t
 - Console **Denials** and **Profile** tabs: a draggable divider between the table and the details/sandbox-text area.
 - Main window: drag the strip just above "Event Details" up or down. One box serves every filter (All Events, File,
   Process, Network, Unsigned, Exclude Apple). The height is remembered between launches.
+
+## Files view in the main window (P3, first version)
+Select the **File** segment: a programmatic Files view replaces the event table and details area (other segments are unchanged).
+- Needs the event daemon (`make esd-install`, Full Disk Access): if it is missing, a banner explains and opens the console's Events tab.
+- The window's **Start / Stop** capture (live, rolling buffer of the newest 20,000 rows), **Clear** empties the list, the **search**
+  field filters the shown rows, the floppy button exports the visible rows as JSON lines (`cresc.filechange/1`).
+- **List** (Kind icon, PID, Process, Path, Inode, Date) or **Text** (selectable). **Cleanup** popup: No Cleanup, Coalesce Repeats,
+  Prune Redundant Events (cleaned rows appear about 2 s late). **Pause / Resume** (Space while the list has focus).
+- Inspector (right): path, created / modified, category, event type, owner, mode, size, inode, device, source of a move,
+  process (pid, ppid, path, signing id, uid, gid). Legend bar under the list.

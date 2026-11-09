@@ -138,6 +138,9 @@ lines (`.crescrec`, plain JSON lines, human-readable). Methods: `recording.save`
   and a create event for one file; interleaved modify and attribute rows must still coalesce; two atomic saves of one target
   inside the window become one row (first_ts..ts spans them). Cleaned live output lags by about the window.
 
+- P3 first version written (untested until built): `FilesViewController` shown by the File segment of the main window; shared
+  `EngineClient.shared`; list, text, legend, inspector, cleanup popup, pause/resume.
+
 ## 8. Full build and VM idea (see also docs/future-feature-adds.md)
 - A "full" Endpoint Security build needs an Apple-approved restricted entitlement (provisioning profile); there is no
   SIP-on workaround. For observation it adds little over `eslogger`; it adds real-time blocking (AUTH events), which the sandbox

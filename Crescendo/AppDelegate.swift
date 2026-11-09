@@ -21,7 +21,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_: Notification) {
-        console?.shutdown()
+        EngineClient.shared.stop()
+    }
+
+    //= opens the console on its Events tab, where the event daemon is installed and Full Disk Access explained
+    @objc func showEventSetup(_: Any?) {
+        if console == nil { console = CrescConsole() }
+        console?.showEventsTab()
     }
 
     @objc func showWindow(_: Any?) {

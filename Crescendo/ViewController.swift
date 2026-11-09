@@ -33,6 +33,11 @@ class ViewController: NSViewController {
     var updateTimer = Date()
     var shouldPurgeEvents = true
 
+    //= the programmatic Files view (shown while the "File" segment is selected) and the views it covers
+    var filesController: FilesViewController?
+    var coveredByFiles = [NSView]()
+    var filesActive: Bool { filesController?.view.isHidden == false }
+
     var status: Status = .stopped {
         didSet {
             switch status {
@@ -75,6 +80,7 @@ class ViewController: NSViewController {
         //= made taller or shorter by dragging the strip above it
         installDetailsHandle(details: eventProps, above: eventLabel,
                              toolTip: "Drag up or down to resize the event details")
+        installFilesView()
     }
 
     // Helper to move our app to the /Applications folder, since it is a requirement for system extensions
@@ -168,6 +174,7 @@ class ViewController: NSViewController {
 
     // Save button handler
     @IBAction func saveEvents(_: Any) {
+        if filesActive { filesController?.exportVisible(); return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "events.json"
         let resp = panel.runModal()
@@ -191,6 +198,7 @@ class ViewController: NSViewController {
 
     // Clear button handler, will drop _all_ events from both saved and active. Will also clear filters.
     @IBAction func clearData(_: Any) {
+        if filesActive { filesController?.clear(); return }
         activeItems.removeAll()
         savedItems.removeAll()
         eventLabel.stringValue = ""
@@ -200,6 +208,7 @@ class ViewController: NSViewController {
 
     // Start button handler
     @IBAction func startListener(_: Any) {
+        if filesActive { filesController?.startCapture(); return }
         guard let extensionIdentifier = extensionBundle?.bundleIdentifier else {
             //= lite build (or damaged bundle): no Endpoint Security extension to start
             status = .stopped
@@ -381,12 +390,18 @@ class ViewController: NSViewController {
     //  We may want to unload the system extension but I'm not quite sure what the
     // "correct" state management looks like right now...
     @IBAction func stopListener(_: Any) {
+        if filesActive { filesController?.stopCapture(); return }
         status = .stopped
     }
 
     @IBAction func searchFieldChange(_ sender: Any) {
         if let menu = sender as? NSMenuItem {
             (searchField.cell as? NSSearchFieldCell)?.placeholderString = menu.title
+        }
+        refreshFilesMode()
+        if filesActive {
+            filesController?.setSearch(searchField.stringValue)
+            return
         }
         updateFilteredEvents()
     }

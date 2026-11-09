@@ -15,7 +15,8 @@ struct DenialRow {
 }
 
 final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NSTableViewDelegate, NSTabViewDelegate, NSSplitViewDelegate {
-    private let engine = EngineClient()
+    private let engine = EngineClient.shared
+    private var mainTabs: NSTabView?
     private let events = EventsPane()
     let window: NSWindow
 
@@ -214,6 +215,7 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
     private func buildUI() {
         let tabs = NSTabView()
         tabs.delegate = self
+        mainTabs = tabs
         addTab(tabs, "Sessions", buildSessions())
         addTab(tabs, "Denials", buildDenials())
         addTab(tabs, "Profile", buildProfile())
@@ -406,12 +408,12 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
     }
 
     private func startEngine() {
-        engine.onEvent = { [weak self] name, data in self?.handleEvent(name, data) }
+        engine.addEventHandler { [weak self] name, data in self?.handleEvent(name, data) }
         engine.onExit = { [weak self] status in
             self?.statusLabel.stringValue = "engine: stopped (exit \(status))"
             self?.runActive = false
         }
-        if let problem = engine.start() {
+        if let problem = engine.ensureStarted() {
             statusLabel.stringValue = "engine: not started"
             log("ERROR: \(problem)")
             return
@@ -428,7 +430,13 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
         }
     }
 
-    func shutdown() { engine.stop() }
+    //= the engine is shared with the main window and stopped by the app at exit
+    func shutdown() {}
+
+    func showEventsTab() {
+        mainTabs?.selectTabViewItem(withIdentifier: "Events")
+        show()
+    }
 
     private func handleEvent(_ name: String, _ data: [String: Any]) {
         switch name {

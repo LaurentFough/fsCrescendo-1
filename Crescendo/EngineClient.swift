@@ -1,6 +1,6 @@
 import Foundation
 
-//= EngineClient.swift  version 0.1.0 (2026-11-08)
+//= EngineClient.swift  version 0.2.0 (2026-11-09)
 //= Talks to the `cresc serve` child process (protocol 1, see tools/cresc/PROTOCOL.md): JSON objects, one per line,
 //= requests on its stdin, responses and push events on its stdout. No network socket is involved.
 //= All callbacks arrive on the main queue. Nothing here runs privileged.
@@ -13,6 +13,15 @@ struct EngineError: Error {
 
 final class EngineClient {
     typealias Reply = (Result<[String: Any], EngineError>) -> Void
+    typealias EventHandler = (String, [String: Any]) -> Void
+
+    //= one engine for the whole app: the console and the Files view share it
+    static let shared = EngineClient()
+
+    private var handlers = [EventHandler]()
+
+    //= every listener sees every push event (filter by event name and watch_id yourself); call on the main queue
+    func addEventHandler(_ handler: @escaping EventHandler) { handlers.append(handler) }
 
     //= push events: (event name, data), e.g. ("run.denial", [...])
     var onEvent: ((String, [String: Any]) -> Void)?
@@ -57,6 +66,9 @@ final class EngineClient {
     }
 
     //= ---- lifecycle -----------------------------------------------------------------------------------------
+    //= Starts the child unless it already runs. Returns an error text, or nil.
+    func ensureStarted() -> String? { isRunning ? nil : start() }
+
     //= Starts the child. Returns an error text, or nil on success.
     func start() -> String? {
         if isRunning { return nil }
@@ -167,7 +179,10 @@ final class EngineClient {
     private func dispatch(_ obj: [String: Any]) {
         if let event = obj["event"] as? String {
             let data = obj["data"] as? [String: Any] ?? [:]
-            DispatchQueue.main.async { self.onEvent?(event, data) }
+            DispatchQueue.main.async {
+                self.onEvent?(event, data)
+                for handler in self.handlers { handler(event, data) }
+            }
             return
         }
         guard let id = obj["id"] as? Int, let reply = pending.removeValue(forKey: id) else { return }
