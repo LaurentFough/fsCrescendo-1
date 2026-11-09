@@ -81,7 +81,7 @@ final class CrescConsole: NSObject, NSWindowDelegate, NSTableViewDataSource, NST
                           styleMask: [.titled, .closable, .resizable, .miniaturizable],
                           backing: .buffered, defer: false)
         super.init()
-        window.title = "Crescendo - cresc console"
+        window.title = "Crescendo - cresc console - \(AppInfo.shortText)"
         window.delegate = self
         window.isReleasedWhenClosed = false
         buildUI()

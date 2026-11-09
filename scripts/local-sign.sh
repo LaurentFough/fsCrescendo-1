@@ -64,5 +64,6 @@ sign "$APP" "$TMP/app.entitlements"
 
 #= 4. verify
 codesign --verify --deep --strict "$APP" || die "verification failed: $APP"
+touch "$APP" "$APP/Contents"      #= Finder shows the folder time: make it the signing (build) time
 log "ad-hoc signed and verified: $APP"
 log "note: running it needs AMFI/SIP to allow restricted entitlements on ad-hoc code (dev VM setup in the README)"

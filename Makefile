@@ -1,5 +1,5 @@
 #= ---------------------------------------------------------------------------
-#= Makefile  -- version 1.10.0  (2026-11-08)
+#= Makefile  -- version 1.11.0  (2026-11-09)
 #= Build / lint / test / debug / clean helpers for fsCrescendo.
 #= Usage  : make help
 #= Needs  : macOS 13+. `make build` uses full Xcode if usable, else the Command Line Tools
@@ -11,7 +11,7 @@
 #=          load unless you use `make build-signed TEAM=<id>`.
 #= ---------------------------------------------------------------------------
 
-MAKEFILE_VERSION := 1.10.0
+MAKEFILE_VERSION := 1.11.0
 SHELL            := /bin/bash
 .DEFAULT_GOAL    := help
 
@@ -48,6 +48,13 @@ V           ?= 0
 #= user-supplied values reach recipes through the environment ("$$VAR"), never pasted into shell text,
 #= so quotes or spaces in them are data, not shell syntax.
 export NAMES LAST ES_EVENTS TEAM BUILD_MODE SIGN FORCE CONFIRM
+
+#= Build identity, baked into the app's Info.plist by xcodebuild: CFBundleVersion = number of commits (monotonic on a branch),
+#= plus the commit ("-dirty" when the tree has uncommitted changes) and the UTC build time. Xcode GUI builds keep the project's values.
+BUILD_NUMBER := $(shell git rev-list --count HEAD 2>/dev/null || echo 0)
+BUILD_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
+BUILD_DATE   := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION_FLAGS := CURRENT_PROJECT_VERSION=$(BUILD_NUMBER) CRESCENDO_BUILD_COMMIT=$(BUILD_COMMIT) CRESCENDO_BUILD_DATE=$(BUILD_DATE)
 
 SYMROOT  := $(CURDIR)/$(BUILD_DIR)/products
 OBJROOT  := $(CURDIR)/$(BUILD_DIR)/obj
@@ -119,8 +126,9 @@ help: #= Show this help
 	@echo "  make build-signed TEAM=ABCDE12345 # signed with YOUR team (never commit that setting)"
 	@echo "  make logs-sandbox NAMES='the-binary ioreg'"
 
-version: #= Print Makefile and git versions
+version: #= Print Makefile, git and app build identity
 	@echo "Makefile $(MAKEFILE_VERSION)"
+	@echo "app build: number $(BUILD_NUMBER), commit $(BUILD_COMMIT), time $(BUILD_DATE)"
 	@git describe --always --dirty --tags 2>/dev/null || echo "git: not a repository"
 
 doctor: #= Environment report: OS, Xcode, tools, SIP/AMFI, repo state
@@ -183,13 +191,14 @@ build: require-macos #= Build: full Xcode if usable, else Command Line Tools com
 
 build-xcode: require-xcode require-sign #= Full Xcode build; SIGN=local (default) builds unsigned then ad-hoc signs with entitlements
 	@$(call say,building $(APP_TARGET) [$(CONFIG)] sign=$(SIGN) with xcodebuild)
-	@$(XCB) -target $(APP_TARGET) $(QUIET) $(SIGN_FLAGS) build
+	@$(XCB) -target $(APP_TARGET) $(QUIET) $(SIGN_FLAGS) $(VERSION_FLAGS) build
+	@touch "$(APP_PATH)"
 	@if [ "$$SIGN" = local ]; then $(MAKE) --no-print-directory local-sign; fi
 	@$(call say,build ok: $(APP_PATH))
 
 build-lite: require-xcode esd-sign #= Build the LITE app (no Endpoint Security extension, no restricted entitlements): runs on a normal Mac
 	@$(call say,building $(APP_TARGET) [$(CONFIG)] unsigned, then packaging the lite app)
-	@$(XCB) -target $(APP_TARGET) $(QUIET) $(UNSIGNED_FLAGS) build
+	@$(XCB) -target $(APP_TARGET) $(QUIET) $(UNSIGNED_FLAGS) $(VERSION_FLAGS) build
 	@sh scripts/lite-package.sh "$(APP_PATH)" "$(LITE_APP)" "$(LITE_ENT)" tools/cresc "$(dir $(ESD_BIN))"
 	@$(call say,lite build ok: $(LITE_APP))
 	@$(call say,run it with: open "$(LITE_APP)")

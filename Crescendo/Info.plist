@@ -18,6 +18,10 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>CrescendoBuildCommit</key>
+	<string>$(CRESCENDO_BUILD_COMMIT)</string>
+	<key>CrescendoBuildDate</key>
+	<string>$(CRESCENDO_BUILD_DATE)</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

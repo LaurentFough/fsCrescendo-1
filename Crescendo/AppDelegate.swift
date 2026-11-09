@@ -45,6 +45,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func buildMenuBarMenu() {
         let menu = NSMenu()
 
+        let about = NSMenuItem(title: AppInfo.longText, action: nil, keyEquivalent: "")
+        about.isEnabled = false //= shows which build is running
+        menu.addItem(about)
+        menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Show App Window", action: #selector(showWindow), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Cresc Console...", action: #selector(showConsole), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Open Recording...", action: #selector(openRecording), keyEquivalent: ""))
@@ -80,5 +84,23 @@ class AppWindowController: NSWindowController, NSWindowDelegate {
     func windowShouldClose(_: NSWindow) -> Bool {
         NSApp.hide(nil)
         return false
+    }
+}
+
+//= The identity of this build, as baked into Info.plist by `make build-lite` (see Makefile BUILD_NUMBER / BUILD_COMMIT / BUILD_DATE).
+enum AppInfo {
+    private static var info: [String: Any] { Bundle.main.infoDictionary ?? [:] }
+
+    //= "1.0.4 (build 312)"
+    static var shortText: String {
+        "\(info["CFBundleShortVersionString"] as? String ?? "?") (build \(info["CFBundleVersion"] as? String ?? "?"))"
+    }
+
+    //= "Crescendo 1.0.4 (build 312), commit 4a1b2c3-dirty, built 2026-11-09T12:00:00Z"
+    static var longText: String {
+        var text = "Crescendo " + shortText
+        if let commit = info["CrescendoBuildCommit"] as? String, !commit.isEmpty { text += ", commit " + commit }
+        if let date = info["CrescendoBuildDate"] as? String, !date.isEmpty { text += ", built " + date }
+        return text
     }
 }
